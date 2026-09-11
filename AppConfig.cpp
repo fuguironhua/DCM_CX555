@@ -17,7 +17,7 @@ bool CAppConfig::Load(const std::filesystem::path& file) {
     if (m_window.keypad.IsEmpty()) m_window.keypad = _T("windows");
     m_window.publicDesc = Read(_T("窗口"), _T("public"));
     m_window.mode = ReadInt(_T("窗口"), _T("mode"), 0);
-    m_window.serverUrl = Read(_T("窗口"), _T("服务器地址"), _T("http://127.0.0.1:17500"));
+    m_window.serverUrl = Read(_T("窗口"), _T("服务器地址"), _T("http://192.168.101.254:17500"));
     return true;
 }
 

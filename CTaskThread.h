@@ -4,9 +4,11 @@
 #include "TaskMemoryState.h"
 #include "obj.h"
 #include "structs.h"
+#include "TaskNpcTables.h"
 #include <cstdarg>
 #include <limits>
 #include <regex>
+#include <vector>
 
 // Keep the unqualified spelling used by the reference task declarations.
 using regex = std::regex;
@@ -82,12 +84,36 @@ protected:
     using AddressArray = std::array<LONGLONG, TaskMemoryState::AddressSlotCount>;
     using ExpressionArray = std::array<CString, TaskMemoryState::ExpressionSlotCount>;
     using WindowArray = std::array<LONGLONG, Fruit15Count>;
+    using MamsArray = std::array<DWORD, TaskMemoryState::MamsSlotCount>;
+    using BagArray = std::array<BagItem, TaskMemoryState::BagSlotCount>;
     static constexpr TaskMemoryState::AddressSlot ROLEB = TaskMemoryState::ROLEB;
+    static constexpr TaskMemoryState::MamsSlot Menpaid = TaskMemoryState::Menpaid;
+    static constexpr TaskMemoryState::MamsSlot BagMax1 = TaskMemoryState::BagMax1;
+    static constexpr TaskMemoryState::MamsSlot BagMax2 = TaskMemoryState::BagMax2;
+    static constexpr TaskMemoryState::MamsSlot BagMax3 = TaskMemoryState::BagMax3;
+    static constexpr TaskMemoryState::BagSlot baxue = TaskMemoryState::baxue;
+    static constexpr TaskMemoryState::BagSlot balan = TaskMemoryState::balan;
+    static constexpr TaskMemoryState::BagSlot bacow = TaskMemoryState::bacow;
+    static constexpr TaskMemoryState::BagSlot balsy = TaskMemoryState::balsy;
+    static constexpr TaskMemoryState::MamsSlot JiGj = TaskMemoryState::JiGj;
+    static constexpr TaskMemoryState::MamsSlot CoXuHa = TaskMemoryState::CoXuHa;
+    static constexpr TaskMemoryState::MamsSlot Cox1 = TaskMemoryState::Cox1;
+    static constexpr TaskMemoryState::MamsSlot Cox2 = TaskMemoryState::Cox2;
+    static constexpr TaskMemoryState::MamsSlot duibxh = TaskMemoryState::duibxh;
+    static constexpr TaskMemoryState::MamsSlot benbxh = TaskMemoryState::benbxh;
+    static constexpr TaskMemoryState::MamsSlot Jijl = TaskMemoryState::Jijl;
+    static constexpr TaskMemoryState::MamsSlot dxuem = TaskMemoryState::dxuem;
+    static constexpr TaskMemoryState::MamsSlot ddenj = TaskMemoryState::ddenj;
+    static constexpr TaskMemoryState::MamsSlot dztsj = TaskMemoryState::dztsj;
+    static constexpr TaskMemoryState::MamsSlot dzbsj = TaskMemoryState::dzbsj;
+    static constexpr TaskMemoryState::MamsSlot drwzt = TaskMemoryState::drwzt;
     TaskMemoryStatePtr m_memory;
     AddressArray& jz;
     ExpressionArray& tsg;
     // Compatibility alias for the reference project's window table.
     WindowArray& ck;
+    MamsArray& Mams;
+    BagArray& bag;
     DWORD dwls = 0;
     std::shared_ptr<tagWndInfo> m_wnd;
     std::shared_ptr<CThreadControl> m_control;
@@ -111,6 +137,13 @@ public:
 
     // Per-thread compatibility containers from the reference project.
     std::vector<DWORD> varrou;
+    // Working copies of the reference task/NPC tables (BianL.h VRENW / VHUOD).
+    std::vector<TaskNpcRewardEntry> VRenw;
+    std::vector<TaskNpcActivityEntry> VHuod;
+    // Active skill lists built by CNearby::mChusrw (reference Vkill/VYid/VZtai).
+    std::vector<TaskSkillEntry> Vkill;
+    std::vector<TaskSkillEntry> VYid;
+    std::vector<TaskSkillZtEntry> VZtai;
     std::vector<Monst> vMonst;
     Monst aMonst{};
 
@@ -118,6 +151,19 @@ public:
     int wBenTuXuL2(float xx, float yy);
     int wOpenMan(DWORD did);//打开NPC名字
     void wXuanZg(DWORD moid);//选择怪物
+    void wUseSk6(DWORD jiid, DWORD moid);//使用技能id,怪物id
+    void wClickNpc(DWORD djg, DWORD gjg = 1);//点击NPC--序号从1开始  改时间间隔
+	int wPet_Chu(int xuh, int cz);//0出站 1休息
+    bool wUseBag2();//人物
+	void wUseBag2(int zl);
+	bool wUseBag2x(int xuh);//人物
+
+
+    void mLua_Dostr(CString csc);//执行lua脚本--限100字节
+
+    //---------------------遍历技能----------------------
+	void  BianAr(DWORD Erc);//遍历技能
+	int  BianSK(DWORD Erc);//遍历技能--轻功
 
 
     //---------------------遍历----------------------
@@ -128,9 +174,12 @@ public:
 	int  NerbXian(DWORD Erc, CString txt_reg);//陷阱
 	int  NerbMonst222(DWORD Erc, regex txt_reg);//定点返回vector + 不要血量
 	void NearbyMonst5(DWORD Erc);//打图用
-    bool NerExist();
+	bool NerExist();
 	bool NerExist(DWORD Mid);//是否在附近
 	DWORD NerExist(CString cname);//返回地址
+    // Resolve a nearby object by its display name through the object-manager
+    // tree.  The return value is the object pointer, not the tree field slot.
+    DWORD FindNearbyObjectByName(const CString& name);
     regex NerbCs(float fjl, Point2f pwz, CString txt_reg);//查询初始化
     bool mCanAttack(DWORD zjdz,DWORD mondz);//是否可以攻击
 
@@ -142,6 +191,38 @@ public:
     DWORD mRead_Buffer(DWORD xuh, CString* name = nullptr,
                        CString* description = nullptr,
                        DWORD* stateObject = nullptr);//读取人物状态
+    // Read the active-state count directly from characterObject + 0x67410.
+    DWORD mRead_BufferCount(DWORD characterObject);
+    // Read the same state tree from an arbitrary character/object pointer.
+    // The caller supplies the object; this method only follows +0x6740C/+0x67410
+    // and the shared state-definition table, without invoking game code.
+    DWORD mRead_BufferFromObject(DWORD characterObject, DWORD xuh,
+                                 CString* name = nullptr,
+                                 CString* description = nullptr,
+                                 DWORD* stateObject = nullptr);
+    // Target/pet objects use the live +0x130 status tree consumed by
+    // Target:GetAllBuffIconName (count is stored at object +0x134).
+    DWORD mRead_TargetBufferCount(DWORD targetObject);
+    DWORD mRead_TargetBufferFromObject(
+        DWORD targetObject, DWORD xuh, CString* name = nullptr,
+        CString* description = nullptr, DWORD* stateObject = nullptr);
+    // Resolve the selected CObject_PlayerOther through the live object-manager
+    // slot, then read its state tree with the same direct-memory path.
+    DWORD mRead_TargetObject();
+    DWORD mRead_TargetBuffer(DWORD xuh, CString* name = nullptr,
+                             CString* description = nullptr,
+                             DWORD* stateObject = nullptr);
+    int Read_RWZT(bool qzjc = false);//读取状态
+    int Read_DTID();//读地图ID
+    void wRideOn(int sx);//坐骑 1上 0下
+	DWORD Read_RWZTC2(DWORD erc, std::vector<DWORD> vzt);//读人物状态
+	DWORD Read_RWZTC2(DWORD erc, DWORD zt);//读人物状态
+	DWORD Read_RWZTgs();//读人物状态个数
+	DWORD Read_RWJY();//读取经验
+	int Read_GENS();//读取跟随 
+	int Read_MoZTT(DWORD gwdz);//读怪物状态
+	int Read_ATID();//读攻击ID
+	int Read_ATID(DWORD gwdz);//读攻击ID
 
 
     //---------------------窗口----------------------
@@ -158,6 +239,8 @@ public:
     // 3 = bind when equipped.
     int cRead_Identify(DWORD xuh);//读取物品鉴定
     int cRead_Bind(DWORD xuh);//读取物品绑定
+    CString cRead_CeguiText(DWORD xuh);
+
 
     //---------------------周末活动----------------------
     DWORD mRead_Benj();//读取本金
@@ -169,6 +252,23 @@ public:
 
     //---------------------跑商--------------------
     DWORD mRead_BangZw();//读取帮派职位
+
+
+    //---------------------任务--------------------
+    CString Read_NpcT(int xuh = 0);//读npc对话
+
+
+    //---------------------宠物+物品----------------------
+	int Read_PetMx();//读最大宠物
+	bool Read_CWCZ(int xuh);//读取宠物是否出站
+	int Read_CWHapp(int xuh);//宠物快乐
+	int Read_CWID(int xuh);//宠物ID
+	int Read_CWSkillID(int xuh, int skillIndex);//读取宠物技能ID
+	bool Read_CWHaveSkill(int xuh, int skillId);//判断宠物是否拥有指定技能
+	int Read_CWXueJi(int xuh);//0=无，1=血祭，2=高级血祭
+	BagItem Read_BagX(int zl);//取加血物品位置
+	BagItem Read_BagN3(CString Nam, int djg, int zl);//取物品位置银票
+
 
 
 private:

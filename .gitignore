@@ -1,0 +1,15 @@
+# Visual Studio / build outputs
+/.vs/
+/.build/
+/Debug/
+/Release/
+/build-int/
+/build-out/
+*.aps
+*.user
+UpgradeLog.htm
+
+# Local analysis, backups and editor backups
+/work/
+/Backup/
+*.ui-backup

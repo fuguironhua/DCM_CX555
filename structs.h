@@ -30,6 +30,20 @@ struct Monst {
 
 // Data returned for the currently recommended city-shop item.
 // destination is the map name parsed from the tooltip's coordinate line.
+// Item slot cached by the reference bag readers. xuh is the game slot
+// number; -1 means the requested item was not found.
+struct BagItem {
+    DWORD xuh = static_cast<DWORD>(-1);
+    DWORD sj1 = 0;
+    DWORD sj2 = 0;
+    DWORD sj3 = 0;
+    DWORD cow1 = 0;
+    DWORD cow2 = 0;
+    bool bjxcz = true;
+    CString csxuh;
+    DWORD diz = 0;
+};
+
 struct PaoShangRecommendData {
     DWORD price = 0;
     DWORD id = 0;

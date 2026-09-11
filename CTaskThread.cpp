@@ -49,6 +49,13 @@ constexpr DWORD kStateBufferNodeRightOffset = 0x08;
 constexpr DWORD kStateBufferNodeValueOffset = 0x14;
 constexpr DWORD kStateBufferEntryIdOffset = 0x08;
 
+// Target/pet objects expose a different tree layout to the Lua target API.
+// The object stores a tree-head pointer at +0x130 and the active node count
+// at +0x134; each tree node stores the status ID directly at +0x10.
+constexpr DWORD kTargetStateTreeOffset = 0x130;
+constexpr DWORD kTargetStateCountOffset = 0x134;
+constexpr DWORD kTargetStateNodeValueOffset = 0x10;
+
 constexpr DWORD kStateDefinitionGlobalRva = 0x007D2704;
 constexpr DWORD kStateDefinitionManagerOffset = 0x04;
 constexpr DWORD kStateDefinitionCountOffset = 0x14;
@@ -58,12 +65,458 @@ constexpr DWORD kStateObjectIdOffset = 0x00;
 constexpr DWORD kStateObjectNameOffset = 0x0C;
 constexpr DWORD kStateObjectDescriptionOffset = 0x40;
 
+// The target resolver loads dword_1325AF0 before resolving the selected object.
+// It is a module-global pointer slot (Game.exe + 0x7C5AF0); its selected
+// CObject_PlayerOther cache is stored at object-manager + 0x48.
+constexpr DWORD kObjectManagerGlobalRva = 0x007C5AF0;
+constexpr DWORD kObjectManagerTargetOffset = 0x48;
+constexpr DWORD kObjectManagerTreeOffset = 0x50;
+constexpr DWORD kObjectManagerNodeKeyOffset = 0x10;
+constexpr DWORD kObjectManagerNodeValueOffset = 0x14;
+constexpr DWORD kSelectionHandleOffset = 0x22BF8;
+
+// Pet table: seven records of PET_RANG bytes.  The out-state fields live
+// on the character object and are compared with the pet record fields.
+constexpr DWORD kPetRecordSize = 524;          // PET_RANG
+constexpr DWORD kPetTableOffset = 0x6711C;
+constexpr DWORD kPetSkillArrayOffset = 0x11C;
+constexpr DWORD kPetSkillSlotCount = 13;
+// SkillTemplate_V1: 696=血祭, 697=高级血祭.
+constexpr DWORD kPetXueJiSkillId = 696;
+constexpr DWORD kPetGaoJiXueJiSkillId = 697;
+constexpr DWORD kPetOutStatusOffset = 0x2A00;   // cwcz1
+constexpr DWORD kPetSoulOffset = kPetOutStatusOffset - 380;
+
 constexpr DWORD kMinimumUserAddress = 0x10000;
 constexpr DWORD kMaximumStateEntries = 0x10000;
 constexpr size_t kMaximumStateTreeSteps = 0x10000;
 
 bool IsPlausibleStatePointer(DWORD address) {
     return address >= kMinimumUserAddress;
+}
+
+DWORD ReadStateBufferFromObject(dmsoft* dm, long targetHwnd, DWORD gameModule,
+                                DWORD characterObject, DWORD xuh,
+                                CString* name, CString* description,
+                                DWORD* stateObject) {
+    if (name != nullptr) name->Empty();
+    if (description != nullptr) description->Empty();
+    if (stateObject != nullptr) *stateObject = 0;
+
+    if (dm == nullptr || gameModule == 0 ||
+        !IsPlausibleStatePointer(characterObject)) {
+        return 0;
+    }
+
+    const auto readDword = [dm, targetHwnd](DWORD address) -> DWORD {
+        return static_cast<DWORD>(dm->ReadIntAddr(
+            targetHwnd, static_cast<LONGLONG>(address), 4));
+    };
+
+    // C7C7D0 walks the active-state std::_Tree in in-order order.  Its
+    // sentinel stores the leftmost node at +0 and the root at +4; each node
+    // stores left/parent/right at +0/+4/+8 and the value entry at +0x14.
+    const DWORD stateCount = readDword(
+        characterObject + kStateBufferCountOffset);
+    if (stateCount == 0 || stateCount > kMaximumStateEntries ||
+        xuh >= stateCount) {
+        return 0;
+    }
+
+    const DWORD treeHead = readDword(
+        characterObject + kStateBufferTreeOffset);
+    if (!IsPlausibleStatePointer(treeHead)) return 0;
+
+    DWORD node = readDword(treeHead + kStateBufferNodeLeftOffset);
+    if (!IsPlausibleStatePointer(node) || node == treeHead) return 0;
+
+    std::unordered_set<DWORD> visited;
+    visited.reserve(static_cast<size_t>((std::min)(
+        stateCount, static_cast<DWORD>(256))));
+    DWORD entry = 0;
+
+    for (DWORD ordinal = 0; ordinal <= xuh; ++ordinal) {
+        if (!IsPlausibleStatePointer(node) || node == treeHead ||
+            !visited.insert(node).second ||
+            visited.size() > kMaximumStateTreeSteps) {
+            return 0;
+        }
+
+        // The byte at +0x0D is the std::_Tree sentinel marker (isnil).
+        if ((readDword(node + 0x0D) & 0xFFu) != 0) return 0;
+
+        if (ordinal == xuh) {
+            entry = readDword(node + kStateBufferNodeValueOffset);
+            break;
+        }
+
+        const DWORD right = readDword(node + kStateBufferNodeRightOffset);
+        if (right != 0 && right != treeHead) {
+            DWORD next = right;
+            size_t depth = 0;
+            for (; depth < kMaximumStateTreeSteps; ++depth) {
+                if (!IsPlausibleStatePointer(next) || next == treeHead) {
+                    return 0;
+                }
+                const DWORD left = readDword(
+                    next + kStateBufferNodeLeftOffset);
+                if (left == 0 || left == treeHead) break;
+                next = left;
+            }
+            if (depth == kMaximumStateTreeSteps) return 0;
+            node = next;
+        } else {
+            DWORD current = node;
+            DWORD parent = readDword(
+                current + kStateBufferNodeParentOffset);
+            size_t ascent = 0;
+            for (; parent != 0 && parent != treeHead &&
+                   ascent < kMaximumStateTreeSteps; ++ascent) {
+                if (!IsPlausibleStatePointer(parent)) return 0;
+                if (current != readDword(
+                        parent + kStateBufferNodeRightOffset)) {
+                    break;
+                }
+                current = parent;
+                parent = readDword(
+                    parent + kStateBufferNodeParentOffset);
+            }
+            if (ascent == kMaximumStateTreeSteps) return 0;
+            node = parent;
+        }
+    }
+
+    if (!IsPlausibleStatePointer(entry)) return 0;
+
+    // [entry+8] is read by the original movsx instruction, therefore the
+    // comparison key is a signed 16-bit value rather than a full DWORD.
+    const SHORT stateId = static_cast<SHORT>(static_cast<WORD>(
+        readDword(entry + kStateBufferEntryIdOffset)));
+
+    // 108BB10 is only a virtual thunk.  Its implementation (F10DB0)
+    // performs a signed binary search over manager+0x30, using manager+0x14
+    // as count and manager+0x40 as the non-empty guard.  Reproduce that data
+    // path directly so no target code is called or patched.
+    const DWORD definitionWrapper = readDword(
+        gameModule + kStateDefinitionGlobalRva);
+    if (!IsPlausibleStatePointer(definitionWrapper)) return 0;
+    const DWORD definitionManager = readDword(
+        definitionWrapper + kStateDefinitionManagerOffset);
+    if (!IsPlausibleStatePointer(definitionManager)) return 0;
+
+    const DWORD definitionCount = readDword(
+        definitionManager + kStateDefinitionCountOffset);
+    const DWORD definitionValid = readDword(
+        definitionManager + kStateDefinitionValidOffset);
+    const DWORD definitionArray = readDword(
+        definitionManager + kStateDefinitionArrayOffset);
+    if (definitionCount == 0 || definitionCount > kMaximumStateEntries ||
+        definitionValid == 0 || !IsPlausibleStatePointer(definitionArray)) {
+        return 0;
+    }
+
+    LONG low = 0;
+    LONG high = static_cast<LONG>(definitionCount - 1);
+    DWORD object = 0;
+    while (low <= high) {
+        const LONG middle = low + (high - low) / 2;
+        const DWORD candidate = readDword(
+            definitionArray + static_cast<DWORD>(middle) * sizeof(DWORD));
+        if (!IsPlausibleStatePointer(candidate)) return 0;
+
+        const LONG candidateId = static_cast<LONG>(
+            readDword(candidate + kStateObjectIdOffset));
+        if (candidateId < static_cast<LONG>(stateId)) {
+            low = middle + 1;
+        } else if (candidateId > static_cast<LONG>(stateId)) {
+            high = middle - 1;
+        } else {
+            object = candidate;
+            break;
+        }
+    }
+    if (!IsPlausibleStatePointer(object)) return 0;
+
+    const DWORD objectId = readDword(object + kStateObjectIdOffset);
+    if (static_cast<LONG>(objectId) != static_cast<LONG>(stateId)) return 0;
+
+    if (stateObject != nullptr) *stateObject = object;
+    if (name != nullptr) {
+        const DWORD nameAddress = readDword(
+            object + kStateObjectNameOffset);
+        if (IsPlausibleStatePointer(nameAddress)) {
+            *name = dm->ReadStringAddr(
+                targetHwnd, static_cast<LONGLONG>(nameAddress), 0, 0);
+        }
+    }
+    if (description != nullptr) {
+        const DWORD descriptionAddress = readDword(
+            object + kStateObjectDescriptionOffset);
+        if (IsPlausibleStatePointer(descriptionAddress)) {
+            *description = dm->ReadStringAddr(
+                targetHwnd, static_cast<LONGLONG>(descriptionAddress), 0, 0);
+        }
+    }
+
+    return objectId;
+}
+
+DWORD ReadTargetStateBufferFromObject(
+    dmsoft* dm, long targetHwnd, DWORD gameModule, DWORD targetObject,
+    DWORD xuh, CString* name, CString* description, DWORD* stateObject) {
+    if (name != nullptr) name->Empty();
+    if (description != nullptr) description->Empty();
+    if (stateObject != nullptr) *stateObject = 0;
+
+    if (dm == nullptr || gameModule == 0 ||
+        !IsPlausibleStatePointer(targetObject)) {
+        return 0;
+    }
+
+    const auto readDword = [dm, targetHwnd](DWORD address) -> DWORD {
+        return static_cast<DWORD>(dm->ReadIntAddr(
+            targetHwnd, static_cast<LONGLONG>(address), 4));
+    };
+
+    const DWORD stateCount = readDword(
+        targetObject + kTargetStateCountOffset);
+    if (stateCount == 0 || stateCount > kMaximumStateEntries ||
+        xuh >= stateCount) {
+        return 0;
+    }
+
+    const DWORD treeHead = readDword(
+        targetObject + kTargetStateTreeOffset);
+    if (!IsPlausibleStatePointer(treeHead)) return 0;
+
+    // The target API starts at the leftmost node and advances in-order.
+    DWORD node = readDword(treeHead + kStateBufferNodeLeftOffset);
+    if (!IsPlausibleStatePointer(node) || node == treeHead) return 0;
+
+    std::unordered_set<DWORD> visited;
+    visited.reserve(static_cast<size_t>((std::min)(
+        stateCount, static_cast<DWORD>(256))));
+    DWORD stateId = 0;
+
+    for (DWORD ordinal = 0; ordinal <= xuh; ++ordinal) {
+        if (!IsPlausibleStatePointer(node) || node == treeHead ||
+            !visited.insert(node).second ||
+            visited.size() > kMaximumStateTreeSteps) {
+            return 0;
+        }
+
+        // The byte at +0x0D is the std::_Tree sentinel marker (isnil).
+        if ((readDword(node + 0x0D) & 0xFFu) != 0) return 0;
+
+        if (ordinal == xuh) {
+            stateId = readDword(node + kTargetStateNodeValueOffset);
+            break;
+        }
+
+        const DWORD right = readDword(node + kStateBufferNodeRightOffset);
+        if (right != 0 && right != treeHead) {
+            DWORD next = right;
+            size_t depth = 0;
+            for (; depth < kMaximumStateTreeSteps; ++depth) {
+                if (!IsPlausibleStatePointer(next) || next == treeHead) {
+                    return 0;
+                }
+                const DWORD left = readDword(
+                    next + kStateBufferNodeLeftOffset);
+                if (left == 0 || left == treeHead) break;
+                next = left;
+            }
+            if (depth == kMaximumStateTreeSteps) return 0;
+            node = next;
+        } else {
+            DWORD current = node;
+            DWORD parent = readDword(
+                current + kStateBufferNodeParentOffset);
+            size_t ascent = 0;
+            for (; parent != 0 && parent != treeHead &&
+                   ascent < kMaximumStateTreeSteps; ++ascent) {
+                if (!IsPlausibleStatePointer(parent)) return 0;
+                if (current != readDword(
+                        parent + kStateBufferNodeRightOffset)) {
+                    break;
+                }
+                current = parent;
+                parent = readDword(
+                    parent + kStateBufferNodeParentOffset);
+            }
+            if (ascent == kMaximumStateTreeSteps) return 0;
+            node = parent;
+        }
+    }
+
+    if (stateId == 0) return 0;
+
+    // Reuse the same sorted definition array as the native GetAllBuff path.
+    const DWORD definitionWrapper = readDword(
+        gameModule + kStateDefinitionGlobalRva);
+    if (!IsPlausibleStatePointer(definitionWrapper)) return 0;
+    const DWORD definitionManager = readDword(
+        definitionWrapper + kStateDefinitionManagerOffset);
+    if (!IsPlausibleStatePointer(definitionManager)) return 0;
+
+    const DWORD definitionCount = readDword(
+        definitionManager + kStateDefinitionCountOffset);
+    const DWORD definitionValid = readDword(
+        definitionManager + kStateDefinitionValidOffset);
+    const DWORD definitionArray = readDword(
+        definitionManager + kStateDefinitionArrayOffset);
+    if (definitionCount == 0 || definitionCount > kMaximumStateEntries ||
+        definitionValid == 0 || !IsPlausibleStatePointer(definitionArray)) {
+        return 0;
+    }
+
+    LONG low = 0;
+    LONG high = static_cast<LONG>(definitionCount - 1);
+    DWORD object = 0;
+    while (low <= high) {
+        const LONG middle = low + (high - low) / 2;
+        const DWORD candidate = readDword(
+            definitionArray + static_cast<DWORD>(middle) * sizeof(DWORD));
+        if (!IsPlausibleStatePointer(candidate)) return 0;
+
+        const LONG candidateId = static_cast<LONG>(
+            readDword(candidate + kStateObjectIdOffset));
+        if (candidateId < static_cast<LONG>(stateId)) {
+            low = middle + 1;
+        } else if (candidateId > static_cast<LONG>(stateId)) {
+            high = middle - 1;
+        } else {
+            object = candidate;
+            break;
+        }
+    }
+    if (!IsPlausibleStatePointer(object)) return 0;
+
+    const DWORD objectId = readDword(object + kStateObjectIdOffset);
+    if (objectId != stateId) return 0;
+
+    if (stateObject != nullptr) *stateObject = object;
+    if (name != nullptr) {
+        const DWORD nameAddress = readDword(
+            object + kStateObjectNameOffset);
+        if (IsPlausibleStatePointer(nameAddress)) {
+            *name = dm->ReadStringAddr(
+                targetHwnd, static_cast<LONGLONG>(nameAddress), 0, 0);
+        }
+    }
+    if (description != nullptr) {
+        const DWORD descriptionAddress = readDword(
+            object + kStateObjectDescriptionOffset);
+        if (IsPlausibleStatePointer(descriptionAddress)) {
+            *description = dm->ReadStringAddr(
+                targetHwnd, static_cast<LONGLONG>(descriptionAddress), 0, 0);
+        }
+    }
+
+    return objectId;
+}
+
+// ObjectManager's +0x50 is the ordered object tree used by its vtable+0x44
+// lookup. Reproduce that lookup in memory so a selected handle can be
+// resolved even when the resolver's +0x48 cache has not been refreshed yet.
+DWORD FindObjectByHandle(dmsoft* dm, long targetHwnd, DWORD objectManager,
+                         LONG handle) {
+    if (dm == nullptr || !IsPlausibleStatePointer(objectManager) ||
+        handle < 0) {
+        return 0;
+    }
+
+    const auto readDword = [dm, targetHwnd](DWORD address) -> DWORD {
+        return static_cast<DWORD>(dm->ReadIntAddr(
+            targetHwnd, static_cast<LONGLONG>(address), 4));
+    };
+
+    const DWORD treeHead = readDword(
+        objectManager + kObjectManagerTreeOffset);
+    if (!IsPlausibleStatePointer(treeHead)) return 0;
+
+    DWORD node = readDword(treeHead + 0x04);
+    DWORD candidate = treeHead;
+    size_t steps = 0;
+    while (IsPlausibleStatePointer(node) && node != treeHead &&
+           steps++ < kMaximumStateTreeSteps) {
+        // MSVC std::_Tree stores the sentinel marker at the high byte of the
+        // node's +0x0C field; read from +0x0D as the game does.
+        if ((readDword(node + 0x0D) & 0xFFu) != 0) break;
+
+        const LONG nodeKey = static_cast<LONG>(
+            readDword(node + kObjectManagerNodeKeyOffset));
+        if (handle <= nodeKey) {
+            candidate = node;
+            node = readDword(node + 0x00);
+        } else {
+            node = readDword(node + 0x08);
+        }
+    }
+
+    if (candidate == treeHead || !IsPlausibleStatePointer(candidate) ||
+        static_cast<LONG>(readDword(
+            candidate + kObjectManagerNodeKeyOffset)) != handle) {
+        return 0;
+    }
+
+    const DWORD object = readDword(
+        candidate + kObjectManagerNodeValueOffset);
+    return IsPlausibleStatePointer(object) ? object : 0;
+}
+
+// Walk an active-status std::_Tree in sorted order. The status trees used by
+// the player and target objects share the same node layout: left/parent/right
+// at +0/+4/+8, the sentinel marker at +0x0D, and the status ID at +0x10.
+// This iterative, cycle-checked traversal avoids the stale-parent and
+// sentinel recursion problems in the old NerbArtest implementation.
+bool CollectStatusTreeValues(dmsoft* dm, long targetHwnd, DWORD treeHead,
+                             DWORD count, std::vector<DWORD>& values) {
+    if (dm == nullptr || !IsPlausibleStatePointer(treeHead) ||
+        count == 0 || count > kMaximumStateEntries) {
+        return false;
+    }
+
+    const auto readDword = [dm, targetHwnd](DWORD address) -> DWORD {
+        return static_cast<DWORD>(dm->ReadIntAddr(
+            targetHwnd, static_cast<LONGLONG>(address), 4));
+    };
+
+    const DWORD root = readDword(treeHead + kStateBufferNodeParentOffset);
+    if (!IsPlausibleStatePointer(root) || root == treeHead) return false;
+
+    std::vector<DWORD> pending;
+    pending.reserve(static_cast<size_t>((std::min)(count,
+                                                    static_cast<DWORD>(256))));
+    std::unordered_set<DWORD> visited;
+    visited.reserve(static_cast<size_t>((std::min)(count,
+                                                    static_cast<DWORD>(256))));
+
+    DWORD node = root;
+    while ((!pending.empty() ||
+            (IsPlausibleStatePointer(node) && node != treeHead)) &&
+           values.size() < count) {
+        while (IsPlausibleStatePointer(node) && node != treeHead) {
+            if (!visited.insert(node).second ||
+                visited.size() > kMaximumStateTreeSteps) {
+                return false;
+            }
+            pending.push_back(node);
+            node = readDword(node + kStateBufferNodeLeftOffset);
+        }
+
+        if (pending.empty()) break;
+        node = pending.back();
+        pending.pop_back();
+
+        // +0x0D is std::_Tree's isnil byte. A marked node is the sentinel,
+        // not an active status entry.
+        if ((readDword(node + 0x0D) & 0xFFu) != 0) return false;
+        values.push_back(readDword(node + kTargetStateNodeValueOffset));
+        node = readDword(node + kStateBufferNodeRightOffset);
+    }
+
+    return !values.empty();
 }
 
 // 跑商任务记录布局（DataPool + 0x28 指向的记录表）。
@@ -77,7 +530,7 @@ constexpr int kMissionRecordCount = 20;
 // Guild-rank data used by the client-side title switch at Game.exe+DCA002:
 // [Game.exe+0x7C6034] yields the player-data object, whose +0x61B90 byte is
 // the raw rank value (2..9: member, elite, merchant, ... guild master).
-constexpr DWORD kGuildPlayerGlobalRva = 0x007C6034;
+constexpr DWORD kGuildPlayerGlobalRva = 0x007C7034;
 constexpr DWORD kGuildRankOffset = 0x61B90;
 
 struct KjdaEntry {
@@ -337,6 +790,8 @@ CTaskThread::CTaskThread(std::shared_ptr<tagWndInfo> wnd,
       jz(m_memory->addresses),
       tsg(m_memory->expressions),
       ck(m_memory->windowAddresses),
+      Mams(m_memory->mams),
+      bag(m_memory->bag),
       m_wnd(std::move(wnd)),
       m_control(std::move(control)),
       m_ini(ini),
@@ -630,6 +1085,146 @@ bool CTaskThread::UpdateMP(DWORD paddr, DWORD lon) {
     dwls = static_cast<DWORD>(m_dm->ReadDataAddrToBin(
         targetHwnd, static_cast<LONGLONG>(dwls), static_cast<long>(lon)));
     return dwls != 0;
+}
+
+void CTaskThread::BianAr(DWORD Erc) {
+    constexpr DWORD kSkillTreeStatusOffset = 0x0D;
+    constexpr DWORD kSkillTreeLeftOffset = 0x00;
+    constexpr DWORD kSkillTreeRightOffset = 0x08;
+
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd ||
+        Erc < kMinimumUserAddress) {
+        return;
+    }
+
+    // The skill table is a binary tree. Keep the reference traversal order
+    // (node, right child, left child), while stopping on stale/cyclic pointers.
+    std::unordered_set<DWORD> visited;
+    visited.reserve(128);
+    std::function<void(DWORD)> visit = [&](DWORD node) {
+        if (node < kMinimumUserAddress || node > 0xFFFFFF00u ||
+            visited.size() >= kMaximumStateTreeSteps ||
+            !visited.insert(node).second) {
+            return;
+        }
+
+        const CString state = Dm()->ReadDataAddr(
+            mmhwnd, static_cast<LONGLONG>(node + kSkillTreeStatusOffset), 1);
+        if (state.CompareNoCase(_T("00")) != 0) return;
+
+        varrou.push_back(node);
+        visit(Read_Dw(node + kSkillTreeRightOffset));
+        visit(Read_Dw(node + kSkillTreeLeftOffset));
+    };
+
+    visit(Erc);
+}
+
+int CTaskThread::BianSK(DWORD Erc) {
+    constexpr DWORD kSkillTreeFirstOffset = 0x2AE0;
+    constexpr DWORD kSkillTreeSecondOffset = 0x2AE0;
+    constexpr DWORD kSkillIdOffset = 0x10;
+    constexpr DWORD kXinfaLevelOffset = 0x20;
+    constexpr DWORD kMenPaiOffset = 0xD0;
+
+    varrou.clear();
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd) {
+        return 0;
+    }
+
+    // Resolve the same five-level chain used by the reference project:
+    // [[[[[ROLEB]+64]+148]+10]+tableOffset]+4.
+    const auto readOffset = [this](DWORD base, DWORD offset) -> DWORD {
+        if (base < kMinimumUserAddress ||
+            base > 0xFFFFFFFFu - offset) {
+            return 0;
+        }
+        return Read_Dw(base + offset);
+    };
+    const auto readSkillRoot = [&](DWORD tableOffset) -> DWORD {
+        DWORD node = readOffset(
+            static_cast<DWORD>(jz[TaskMemoryState::ROLEB]), 0);
+        node = readOffset(node, 0x64);
+        node = readOffset(node, 0x148);
+        node = readOffset(node, 0x10);
+        node = readOffset(node, tableOffset);
+        return readOffset(node, 0x04);
+    };
+
+    // Erc is accepted as an explicit root for diagnostics; zero means use
+    // the live character skill table at +0x2A60.
+    const DWORD skillRoot = Erc != 0 ? Erc : readSkillRoot(kSkillTreeFirstOffset);
+    BianAr(skillRoot);
+    const size_t skillNodeCount = varrou.size();
+
+    DWORD menPai = 0;
+    bool menPaiRead = false;
+    if (!tsg[TaskMemoryState::Shuxtb].IsEmpty() &&
+        UpdateMP(tsg[TaskMemoryState::Shuxtb], 0x100) &&
+        dwls >= kMinimumUserAddress) {
+        // UpdateMP returns a local copy allocated by dmsoft, so this byte must
+        // be read from our process rather than through ReadIntAddr again.
+        const auto* characterCopy = reinterpret_cast<const BYTE*>(
+            static_cast<ULONG_PTR>(dwls));
+        menPai = characterCopy[kMenPaiOffset];
+        menPaiRead = true;
+    }
+
+    bool hasQingGong = false;
+    for (const DWORD node : varrou) {
+        if (readOffset(node, kSkillIdOffset) == 0x22u) {
+            hasQingGong = true;
+            break;
+        }
+    }
+
+    // The old Mams[dqgid] state is not present in this project, so expose the
+    // selected ID through the diagnostic log while keeping varrou as the
+    // complete first skill tree for callers/tests.
+    const DWORD qingGongId = hasQingGong
+        ? 0x22u
+        : (menPai == 10u ? 0x6Eu : 23u + menPai);
+    CString summary;
+    summary.Format(
+        _T("BianSK: root=0x%08lX nodes=%lu menpai=%s%lu qinggong=0x%08lX"),
+        static_cast<unsigned long>(skillRoot),
+        static_cast<unsigned long>(skillNodeCount),
+        menPaiRead ? _T("") : _T("unknown/"),
+        static_cast<unsigned long>(menPai),
+        static_cast<unsigned long>(qingGongId));
+    DebugLog(summary);
+
+    // Menpai 3 has a second tree containing the 心法 entry (ID 0x15).
+    // Scan it for logging, then restore the primary skill tree in varrou.
+    if (menPai == 3u) {
+        const std::vector<DWORD> skillNodes = varrou;
+        varrou.clear();
+        const DWORD xinfaRoot = readSkillRoot(kSkillTreeSecondOffset);
+        BianAr(xinfaRoot);
+
+        DWORD xinfaLevel = 0;
+        bool xinfaFound = false;
+        for (const DWORD node : varrou) {
+            if (readOffset(node, kSkillIdOffset) == 0x15u) {
+                xinfaLevel = readOffset(node, kXinfaLevelOffset);
+                xinfaFound = true;
+                break;
+            }
+        }
+
+        DebugLog(_T("BianSK: xinfa root=0x%08lX nodes=%lu level=%s%lu"),
+                 static_cast<unsigned long>(xinfaRoot),
+                 static_cast<unsigned long>(varrou.size()),
+                 xinfaFound ? _T("") : _T("unknown/"),
+                 static_cast<unsigned long>(xinfaLevel));
+        varrou = skillNodes;
+    } else if (menPai == 4u) {
+        // The reference reads RWQX here; the current framework has no blp/
+        // ReadIni state yet, so retain the branch as an explicit trace point.
+        DebugLog(_T("BianSK: menpai=4, RWQX state is not mapped"));
+    }
+
+    return static_cast<int>(skillNodeCount);
 }
 
 void CTaskThread::SleepEx(DWORD milliseconds) {
@@ -1101,6 +1696,16 @@ int CTaskThread::cRead_Bind(DWORD xuh)
     return property7 ? 3 : 0;
 }
 
+CString CTaskThread::cRead_CeguiText(DWORD xuh)
+{
+    if (static_cast<size_t>(xuh) >= Fruit15Count) {
+        return CString();
+    }
+
+    const DWORD window = static_cast<DWORD>(ck[xuh]);
+    return ReadCeguiText(window);
+}
+
 DWORD CTaskThread::mRead_Benj()
 {
     if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd) {
@@ -1439,6 +2044,417 @@ DWORD CTaskThread::mRead_BangZw()
     return rank >= 2 && rank <= 9 ? rank : 0;
 }
 
+CString CTaskThread::Read_NpcT(int xuh)
+{
+    if (xuh < 0 || !m_dm || !m_ready.load() ||
+        !m_wnd || !m_wnd->hWnd) {
+        return CString();
+    }
+
+    // The old ReadString expression is equivalent to:
+    //   dataPool = [RenW]
+    //   npcTextBase = [dataPool + 0x2C]
+    //   text = npcTextBase + xuh * 0x118 + 0x16
+    // Resolve those dwords explicitly so a stale/invalid pointer fails
+    // cleanly instead of being hidden by the expression parser.
+    constexpr DWORD kNpcDataPoolOffset = 0x2C;
+    constexpr DWORD kNpcRecordStride = 0x118;
+    constexpr DWORD kNpcTextOffset = 0x16;
+
+    const DWORD roleWork = static_cast<DWORD>(jz[TaskMemoryState::RenW]);
+    if (roleWork < kMinimumUserAddress) return CString();
+
+    const auto readDword = [this](DWORD address) -> DWORD {
+        return static_cast<DWORD>(Dm()->ReadIntAddr(
+            mmhwnd, static_cast<LONGLONG>(address), 4));
+    };
+
+    const DWORD dataPool = readDword(roleWork);
+    if (dataPool < kMinimumUserAddress) return CString();
+
+    const DWORD npcTextBase = readDword(dataPool + kNpcDataPoolOffset);
+    if (npcTextBase < kMinimumUserAddress) return CString();
+
+    const LONGLONG textAddress = static_cast<LONGLONG>(npcTextBase) +
+                                  static_cast<LONGLONG>(xuh) * kNpcRecordStride +
+                                  kNpcTextOffset;
+    // type=0 is the game's GBK/code-page text. length=0 lets dmsoft detect
+    // the terminating NUL, so the text is not truncated to a fixed buffer.
+    return Dm()->ReadStringAddr(mmhwnd, textAddress, 0, 0);
+}
+
+//---------------------宠物+品----------------------
+int CTaskThread::Read_PetMx()
+{
+    constexpr DWORD kPetRecordCount = 7;
+    constexpr DWORD kPetAttackOffset1 = 196;
+    constexpr DWORD kPetAttackOffset2 = 184;
+    constexpr DWORD kPetSoulIdOffset = 8;
+
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd ||
+        tsg[TaskMemoryState::shuxcw].IsEmpty()) {
+        return -1;
+    }
+
+    UpdateMP(tsg[TaskMemoryState::shuxcw], 0x1000);
+    if (dwls < kMinimumUserAddress) return -1;
+
+    const auto* petBase = reinterpret_cast<const BYTE*>(
+        static_cast<ULONG_PTR>(dwls));
+    int maxAttack = -1;
+    int selected = -1;
+
+    for (DWORD i = 0; i < kPetRecordCount; ++i) {
+        const BYTE* record = petBase + static_cast<size_t>(i) * kPetRecordSize;
+        const DWORD recordState = *reinterpret_cast<const DWORD*>(record);
+        if (recordState == 0xFFFFFFFFu) break;
+
+        if (Read_CWCZ(static_cast<int>(i))) {
+            return static_cast<int>(i);
+        }
+
+        const int attack1 = static_cast<int>(
+            *reinterpret_cast<const DWORD*>(record + kPetAttackOffset1));
+        const int attack2 = static_cast<int>(
+            *reinterpret_cast<const DWORD*>(record + kPetAttackOffset2));
+        const int attack = (std::max)(attack1, attack2);
+        if (attack <= maxAttack) continue;
+
+        const DWORD petSoulId = *reinterpret_cast<const DWORD*>(
+            record + kPetSoulIdOffset);
+        CString expression;
+        expression.Format(_T("[[[[%08x]+64]+148]+10]+%08x"),
+                           static_cast<DWORD>(jz[TaskMemoryState::ROLEB]),
+                           static_cast<DWORD>(kPetSoulOffset));
+        const DWORD roleSoulId = static_cast<DWORD>(
+            Dm()->ReadInt(mmhwnd, expression, 4));
+        if (petSoulId == roleSoulId) continue;
+
+        maxAttack = attack;
+        selected = static_cast<int>(i);
+        Mams[Cox1] = *reinterpret_cast<const DWORD*>(record + 8);
+        Mams[Cox2] = *reinterpret_cast<const DWORD*>(record + 12);
+    }
+
+    return maxAttack == -1 ? -1 : selected;
+}
+
+bool CTaskThread::Read_CWCZ(int xuh)
+{
+    constexpr DWORD kPetRecordCount = 7;
+    constexpr DWORD kPetStatusOffset1 = 8;
+    constexpr DWORD kPetStatusOffset2 = 12;
+    constexpr DWORD kPetStatusOffset3 = 4;
+
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd ||
+        xuh < 0 || static_cast<DWORD>(xuh) >= kPetRecordCount) {
+        return false;
+    }
+
+    const DWORD bagJ = static_cast<DWORD>(jz[TaskMemoryState::BagJ]);
+    const DWORD roleBase = static_cast<DWORD>(jz[TaskMemoryState::ROLEB]);
+    if (bagJ < kMinimumUserAddress || roleBase < kMinimumUserAddress) {
+        return false;
+    }
+
+    const DWORD petOffset = static_cast<DWORD>(xuh) * kPetRecordSize;
+    CString expression;
+    expression.Format(_T("[[%08x]+%08x]+%08x"),
+                       bagJ, kPetTableOffset, petOffset + kPetStatusOffset1);
+    const DWORD cwa8 = static_cast<DWORD>(
+        Dm()->ReadInt(mmhwnd, expression, 4));
+
+    expression.Format(_T("[[%08x]+%08x]+%08x"),
+                       bagJ, kPetTableOffset, petOffset + kPetStatusOffset2);
+    const DWORD cwac = static_cast<DWORD>(
+        Dm()->ReadInt(mmhwnd, expression, 4));
+
+    expression.Format(_T("[[[[%08x]+64]+148]+10]+%05x"),
+                       roleBase, static_cast<DWORD>(kPetOutStatusOffset));
+    const DWORD rwa8 = static_cast<DWORD>(
+        Dm()->ReadInt(mmhwnd, expression, 4));
+
+    expression.Format(_T("[[[[%08x]+64]+148]+10]+%05x"),
+                       roleBase,
+                       static_cast<DWORD>(kPetOutStatusOffset + kPetStatusOffset3));
+    const DWORD rwac = static_cast<DWORD>(
+        Dm()->ReadInt(mmhwnd, expression, 4));
+
+    if (cwa8 == rwa8 && cwac == rwac) {
+        Mams[Cox1] = cwa8;
+        Mams[Cox2] = cwac;
+        return true;
+    }
+    return false;
+}
+
+int CTaskThread::Read_CWHapp(int xuh)
+{
+    constexpr DWORD kPetRecordCount = 7;
+    constexpr DWORD kPetHappinessOffset = 92;
+
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd ||
+        xuh < 0 || static_cast<DWORD>(xuh) >= kPetRecordCount) {
+        return 0;
+    }
+
+    const DWORD bagJ = static_cast<DWORD>(jz[TaskMemoryState::BagJ]);
+    if (bagJ < kMinimumUserAddress) return 0;
+
+    CString expression;
+    expression.Format(_T("[[%08x]+%08x]+%08x"),
+                       bagJ, kPetTableOffset,
+                       static_cast<DWORD>(xuh) * kPetRecordSize +
+                           kPetHappinessOffset);
+    return static_cast<int>(Dm()->ReadInt(mmhwnd, expression, 4));
+}
+
+int CTaskThread::Read_CWID(int xuh)
+{
+    constexpr DWORD kPetRecordCount = 7;
+    constexpr DWORD kPetIdOffset = 16;
+
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd ||
+        xuh < 0 || static_cast<DWORD>(xuh) >= kPetRecordCount) {
+        return 0;
+    }
+
+    const DWORD bagJ = static_cast<DWORD>(jz[TaskMemoryState::BagJ]);
+    if (bagJ < kMinimumUserAddress) return 0;
+
+    CString expression;
+    expression.Format(_T("[[%08x]+%08x]+%08x"),
+                       bagJ, kPetTableOffset,
+                       static_cast<DWORD>(xuh) * kPetRecordSize +
+                           kPetIdOffset);
+    return static_cast<int>(Dm()->ReadInt(mmhwnd, expression, 4));
+}
+
+int CTaskThread::Read_CWSkillID(int xuh, int skillIndex)
+{
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd ||
+        xuh < 0 || static_cast<DWORD>(xuh) >= 7 ||
+        skillIndex < 0 || static_cast<DWORD>(skillIndex) >= kPetSkillSlotCount) {
+        return 0;
+    }
+
+    const DWORD bagJ = static_cast<DWORD>(jz[TaskMemoryState::BagJ]);
+    if (!IsPlausibleStatePointer(bagJ)) return 0;
+
+    // Pet::GetSkillIDbyIndex uses the same chain:
+    // BagJ -> +0x6711C -> record[xuh] + 0x11C -> skill[index].
+    const DWORD bagManager = Read_Dw(bagJ);
+    if (!IsPlausibleStatePointer(bagManager)) return 0;
+    const DWORD petTable = Read_Dw(bagManager + kPetTableOffset);
+    if (!IsPlausibleStatePointer(petTable)) return 0;
+
+    const DWORD record = petTable + static_cast<DWORD>(xuh) * kPetRecordSize;
+    const DWORD skillArray = Read_Dw(record + kPetSkillArrayOffset);
+    if (!IsPlausibleStatePointer(skillArray)) return 0;
+
+    const DWORD skillEntry = Read_Dw(
+        skillArray + static_cast<DWORD>(skillIndex) * sizeof(DWORD));
+    if (!IsPlausibleStatePointer(skillEntry)) return 0;
+
+    // The array stores CActionItem_PetSkill entries.  Their first field is a
+    // pointer to the skill DBC object, whose first field is the numeric ID.
+    const DWORD skillObject = Read_Dw(skillEntry);
+    if (!IsPlausibleStatePointer(skillObject)) return 0;
+    return static_cast<int>(Read_Dw(skillObject));
+}
+
+bool CTaskThread::Read_CWHaveSkill(int xuh, int skillId)
+{
+    if (skillId <= 0) return false;
+    for (int index = 0; index < static_cast<int>(kPetSkillSlotCount); ++index) {
+        if (Read_CWSkillID(xuh, index) == skillId) return true;
+    }
+    return false;
+}
+
+int CTaskThread::Read_CWXueJi(int xuh)
+{
+    if (Read_CWHaveSkill(xuh, static_cast<int>(kPetGaoJiXueJiSkillId))) {
+        return 2;
+    }
+    return Read_CWHaveSkill(xuh, static_cast<int>(kPetXueJiSkillId)) ? 1 : 0;
+}
+
+BagItem CTaskThread::Read_BagX(int zl)
+{
+    if (!m_dm || !m_ready.load()) return BagItem{};
+
+    CString name;
+    CString basePath = tsg[TaskMemoryState::workdir];
+    if (basePath.IsEmpty()) {
+        basePath = CString(std::filesystem::current_path().c_str());
+    }
+
+    CString iniPath = basePath + _T("/FanXiao.ini");
+    if (!std::filesystem::exists(std::filesystem::path(iniPath.GetString()))) {
+        iniPath = basePath + _T("/config/FanXiao.ini");
+    }
+
+    if (zl == 1) name = Dm()->ReadIni(_T("usewup"), _T("xue"), iniPath.GetString());
+    if (zl == 2) name = Dm()->ReadIni(_T("usewup"), _T("lan"), iniPath.GetString());
+    if (zl == 3) name = Dm()->ReadIni(_T("usewup"), _T("con"), iniPath.GetString());
+    if (zl == 4) name = Dm()->ReadIni(_T("usewup"), _T("dwf"), iniPath.GetString());
+    return Read_BagN3(name, 0, zl);
+}
+
+BagItem CTaskThread::Read_BagN3(CString Nam, int djg, int zl)
+{
+    BagItem& item = bag[balsy];
+    item = BagItem{};
+    item.xuh = static_cast<DWORD>(-1);
+    item.bjxcz = true;
+
+    if (!m_control || m_control->IsStopping() || !m_dm ||
+        !m_ready.load() || !m_wnd || !m_wnd->hWnd) {
+        return item;
+    }
+
+    std::regex txtRegex;
+    try {
+        txtRegex = std::regex(CStringToNearbyAnsi(Nam));
+    } catch (const std::regex_error&) {
+        DebugLog(_T("Read_BagN3: invalid item regex"));
+        return item;
+    }
+
+    int bagmax = 0;
+    if (djg == 0) bagmax = static_cast<int>(Mams[BagMax1]);
+    if (djg == 1) bagmax = static_cast<int>(Mams[BagMax2]);
+    if (djg == 2) bagmax = 20;
+    if (bagmax <= 0 || bagmax > 200) return item;
+
+    const DWORD bagJ = static_cast<DWORD>(jz[TaskMemoryState::BagJ]);
+    if (bagJ < kMinimumUserAddress) return item;
+
+    for (int i = 0; i < bagmax; ++i) {
+        CString expression;
+        expression.Format(
+            _T("[[[[[%08x]+22C00]+%08x]+2c]+18]"),
+            bagJ,
+            static_cast<DWORD>(djg * 400 + i * 4));
+        const CString itemName = Dm()->ReadString(mmhwnd, expression, 0, 0);
+        if (!std::regex_match(CStringToNearbyAnsi(itemName), txtRegex)) {
+            continue;
+        }
+
+        item.xuh = static_cast<DWORD>(i + djg * 100);
+        item.csxuh.Format(_T("%02x"), item.xuh);
+        item.bjxcz = false;
+
+        UpdateMP(tsg[TaskMemoryState::shuxbg], 0x400);
+        if (dwls >= kMinimumUserAddress) {
+            const DWORD* itemIds = reinterpret_cast<const DWORD*>(
+                static_cast<ULONG_PTR>(dwls));
+            item.diz = itemIds[item.xuh];
+        }
+
+        dwls = static_cast<DWORD>(
+            Dm()->ReadInt(mmhwnd, tsg[TaskMemoryState::shuxbg], 4));
+        expression.Format(_T("[%08x]+14"),
+                          dwls + static_cast<DWORD>(djg * 400 + i * 4));
+        UpdateMP(expression, 0x100);
+        if (dwls >= kMinimumUserAddress) {
+            const BYTE* itemData = reinterpret_cast<const BYTE*>(
+                static_cast<ULONG_PTR>(dwls));
+            item.sj1 = *reinterpret_cast<const DWORD*>(itemData + 0);
+            item.sj2 = *reinterpret_cast<const DWORD*>(itemData + 4);
+            item.sj3 = *reinterpret_cast<const DWORD*>(itemData + 8);
+        }
+
+        if (zl != 3) {
+            item.cow1 = 0;
+            item.cow2 = 0;
+        } else {
+            item.cow1 = Mams[Cox1];
+            item.cow2 = Mams[Cox2];
+        }
+        break;
+    }
+
+    return item;
+}
+
+int CTaskThread::wPet_Chu(int xuh, int cz)
+{
+
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 750 + 16, 0, Mams[Cox1]);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 750 + 23, 0, Mams[Cox2]);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 750 + 30, 0, cz);    
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0, jz[TaskMemoryState::Nbsq] + 750);
+    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
+    return 0;
+}
+
+void CTaskThread::wUseBag2(int zl)
+{
+    if (zl == 1) bag[balsy] = bag[baxue];
+    if (zl == 2) bag[balsy] = bag[balan];
+    if (zl == 3) bag[balsy] = bag[bacow];
+    if (bag[balsy].bjxcz) return;                 // no usable item
+
+    // reference: when the write does not take effect, re-read the slot once and retry
+    for (size_t i = 0; i < 2; ++i) {
+        if (bag[balsy].bjxcz) {
+            DebugLog(_T("wUseBag2: item unavailable, type=%d"), zl);
+            return;
+        }
+        if (wUseBag2()) break;
+
+        bag[balsy] = Read_BagX(zl);
+        if (zl == 1) bag[baxue] = bag[balsy];
+        if (zl == 2) bag[balan] = bag[balsy];
+        if (zl == 3) bag[bacow] = bag[balsy];
+    }
+}
+
+bool CTaskThread::wUseBag2()
+{
+	Dm()->WriteDataAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 800 + 9, bag[balsy].csxuh);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 800 + 13, 0, bag[balsy].sj3);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 800 + 20, 0, bag[balsy].sj1);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 800 + 27, 0, bag[balsy].sj2);
+	Mams[TaskMemoryState::dZJID] = Dm()->ReadInt(mmhwnd, tsg[TaskMemoryState::ZJID], 4);//每次使用物品更新
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 800 + 34, 0, Mams[TaskMemoryState::dZJID]);//打怪开始就更新 不换图不更新
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 800 + 62, 0, bag[balsy].cow1);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 800 + 69, 0, bag[balsy].cow2);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0, jz[TaskMemoryState::Nbsq] + 800);
+    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
+    return true;// use command issued (reference semantics)
+}
+
+bool CTaskThread::wUseBag2x(int xuh)
+{
+    DebugLog(_T("wUseBag2x: slot=%d"), xuh);
+    if (xuh < 0 || static_cast<DWORD>(xuh + 2) > Mams[BagMax1]) return false;
+
+    bag[balsy].xuh = static_cast<DWORD>(xuh);
+    bag[balsy].csxuh.Format(_T("%02x"), bag[balsy].xuh);
+    bag[balsy].bjxcz = false;
+
+    // item data table: reference [BagJ]+22A9C -> base + 0x14 + index*4
+    dwls = Read_Dw(tsg[TaskMemoryState::shuxbg]);
+    CString expression;
+    expression.Format(_T("[%08x]+14"),
+                      dwls + static_cast<DWORD>(xuh) * 4);
+    if (UpdateMP(expression, 0x100) && dwls >= kMinimumUserAddress) {
+        const auto* itemData = reinterpret_cast<const BYTE*>(
+            static_cast<ULONG_PTR>(dwls));
+        bag[balsy].sj1 = *reinterpret_cast<const DWORD*>(itemData + 0);
+        bag[balsy].sj2 = *reinterpret_cast<const DWORD*>(itemData + 4);
+        bag[balsy].sj3 = *reinterpret_cast<const DWORD*>(itemData + 8);
+        bag[balsy].cow1 = 0;
+        bag[balsy].cow2 = 0;
+    }
+
+    wUseBag2();
+    return true;
+}
+
 CString CTaskThread::mGet_Kjda(CString cTim)
 {
     const std::wstring query = KjdaNormalize(std::wstring(
@@ -1623,6 +2639,7 @@ int CTaskThread::NerbMonst3(DWORD Erc, int leix, CString txt_reg) {
     if (varrou.empty()) return 0;
 
     Point2f playerPosition{};
+
     if (!ReadNearbyPlayerPosition(playerPosition)) {
         DebugLog(_T("nearby scan skipped: player position is unavailable"));
         return 0;
@@ -1748,6 +2765,14 @@ int CTaskThread::NerbMonst222(DWORD Erc, regex txt_reg) {
     return static_cast<int>(vMonst.size());
 }
 
+void CTaskThread::wUseSk6(DWORD jiid, DWORD moid)
+{
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 590 + 16, 0, jiid);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 590 + 45, 0, moid);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0, jz[TaskMemoryState::Nbsq] + 590);
+    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
+}
+
 void CTaskThread::NearbyMonst5(DWORD Erc) {
     varrou.clear();
     NerbAr(Erc);
@@ -1797,6 +2822,30 @@ void CTaskThread::NearbyMonst5(DWORD Erc) {
     }
 }
 
+void CTaskThread::mLua_Dostr(CString csc)
+{
+    Dm()->WriteStringAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 0x1000, 0, csc);
+    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTC, 0, jz[TaskMemoryState::Nbsq] + 670);//标准
+    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTB, 0, 1);
+}
+
+void CTaskThread::wClickNpc(DWORD djg, DWORD gjg)
+{
+    CString tsls;
+    const DWORD renW = static_cast<DWORD>(jz[TaskMemoryState::RenW]);
+	tsls.Format(_T("[[%08x]+2C]+%08x"), renW, djg * 0x118 + 0x118);
+	DWORD cwid = Dm()->ReadInt(mmhwnd, tsls, 4);
+    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 700 + 9, 0, cwid);
+	tsls.Format(_T("[[%08x]+2C]"), renW);
+	DWORD cwid2 = Dm()->ReadInt(mmhwnd, tsls, 4);
+    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 700 + 23, 0, cwid2);
+	tsls.Format(_T("[[%08x]+2C]+%08x"), renW, djg * 0x118 + 0x10);
+	DWORD cwid3 = Dm()->ReadInt(mmhwnd, tsls, 4);
+    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 700 + 16, 0, cwid3);
+    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0, jz[TaskMemoryState::Nbsq] + 700);
+    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
+}
+
 bool CTaskThread::NerExist() {
     varrou.clear();
     const DWORD root = Read_Dw(tsg[TaskMemoryState::ERC]);
@@ -1826,6 +2875,79 @@ DWORD CTaskThread::NerExist(CString cname) {
     return 0;
 }
 
+DWORD CTaskThread::FindNearbyObjectByName(const CString& name) {
+    if (name.IsEmpty() || !m_dm || !m_ready.load() ||
+        !m_wnd || !m_wnd->hWnd) {
+        return 0;
+    }
+
+    const long targetHwnd = static_cast<long>(reinterpret_cast<INT_PTR>(m_wnd->hWnd));
+    LONGLONG gameModule = m_dm->GetModuleBaseAddr(targetHwnd, _T("Game.exe"));
+    if (gameModule == 0 && m_memory) gameModule = m_memory->gameModule;
+    if (gameModule == 0) return 0;
+
+    const DWORD game = static_cast<DWORD>(gameModule);
+    const DWORD objectManager = Read_Dw(game + kObjectManagerGlobalRva);
+    if (!IsPlausibleStatePointer(objectManager)) return 0;
+
+    const auto objectFromEntitySlot = [&](DWORD entitySlot) -> DWORD {
+        if (!IsPlausibleStatePointer(entitySlot)) return 0;
+        const CString objectName = Dm()->ReadString(
+            mmhwnd, BuildNearbyNameExpression(entitySlot).GetString(), 0, 0);
+        if (objectName.Find(name) == -1) return 0;
+
+        // Both object trees store the CObject_* pointer in node + 0x14.
+        const DWORD object = Read_Dw(entitySlot);
+        return IsPlausibleStatePointer(object) ? object : 0;
+    };
+
+    // First search the nearby-object tree (+0x58), whose root is at head+4.
+    const DWORD nearbyHead = Read_Dw(objectManager + 0x58);
+    if (IsPlausibleStatePointer(nearbyHead)) {
+        const DWORD nearbyRoot = Read_Dw(nearbyHead + 0x04);
+        if (IsPlausibleStatePointer(nearbyRoot) && nearbyRoot != nearbyHead) {
+            NerbAr(nearbyRoot);
+            for (const DWORD entitySlot : varrou) {
+                const DWORD object = objectFromEntitySlot(entitySlot);
+                if (object != 0) return object;
+            }
+        }
+    }
+
+    // Pets/summoners can be absent from the nearby tree while still present
+    // in the handle-indexed object tree at +0x50.  That tree uses the same
+    // node value field but its left/right links are +0/+8 respectively.
+    const DWORD handleHead = Read_Dw(objectManager + kObjectManagerTreeOffset);
+    if (!IsPlausibleStatePointer(handleHead)) return 0;
+    const DWORD handleRoot = Read_Dw(handleHead + 0x04);
+    if (!IsPlausibleStatePointer(handleRoot) || handleRoot == handleHead) {
+        return 0;
+    }
+
+    std::vector<DWORD> pending;
+    pending.push_back(handleRoot);
+    std::unordered_set<DWORD> visited;
+    visited.reserve(4096);
+    while (!pending.empty() && visited.size() < 4096) {
+        const DWORD node = pending.back();
+        pending.pop_back();
+        if (!IsPlausibleStatePointer(node) || node == handleHead ||
+            !visited.insert(node).second) {
+            continue;
+        }
+        if ((Read_Dw(node + 0x0D) & 0xFFu) != 0) continue;
+
+        const DWORD object = objectFromEntitySlot(node + 0x14);
+        if (object != 0) return object;
+
+        const DWORD left = Read_Dw(node + 0x00);
+        const DWORD right = Read_Dw(node + 0x08);
+        if (left != 0) pending.push_back(left);
+        if (right != 0) pending.push_back(right);
+    }
+    return 0;
+}
+
 bool CTaskThread::wHaveRide() {
     if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd) return false;
 
@@ -1841,6 +2963,92 @@ bool CTaskThread::wHaveRide() {
     const DWORD flag = static_cast<DWORD>(m_dm->ReadIntAddr(
         targetHwnd, record0 + 4, 4));
     return id > 0 && flag != 0;
+}
+
+void CTaskThread::wRideOn(int sx) {
+    if (sx != 0 && sx != 1) return;
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd ||
+        !m_control || m_control->IsStopping()) {
+        return;
+    }
+
+    // Character-data offsets used by the reference implementation:
+    // +0x4C is the movement speed (mounted is > 4.7), and +0x68C is the
+    // generated/battle state which must be idle before changing mounts.
+    constexpr DWORD kRideSpeedOffset = 0x4C;
+    constexpr DWORD kRideGenerationOffset = 0x68C;
+
+    const auto readCharacterData = [this]() -> DWORD {
+        if (tsg[TaskMemoryState::Shuxtb].IsEmpty()) return 0;
+        const DWORD characterData = Read_Dw(tsg[TaskMemoryState::Shuxtb]);
+        return IsPlausibleStatePointer(characterData) ? characterData : 0;
+    };
+    const auto readRideSpeed = [&]() -> float {
+        const DWORD characterData = readCharacterData();
+        if (characterData == 0) return -1.0f;
+        return Dm()->ReadFloatAddr(
+            mmhwnd, static_cast<LONGLONG>(characterData) + kRideSpeedOffset);
+    };
+    const auto readGenerationState = [&]() -> DWORD {
+        const DWORD characterData = readCharacterData();
+        return characterData == 0
+            ? 0
+            : Read_Dw(characterData + kRideGenerationOffset);
+    };
+
+    // Match the original wait-for-idle guard, but keep it interruptible by
+    // the framework stop controller.
+    while (readGenerationState() == 1 && !m_control->IsStopping()) {
+        SleepEx(1000);
+    }
+    if (m_control->IsStopping()) return;
+
+    // Mounting requires an available, highlighted ride.  wHaveRide already
+    // performs the live ride-table check for this build.
+    if (sx == 1 && !wHaveRide()) {
+        LogD(_T("坐骑操作：没有可用坐骑"));
+        return;
+    }
+
+    float speed = readRideSpeed();
+    for (int retry = 0; speed == -1.0f && retry < 20 &&
+                            !m_control->IsStopping(); ++retry) {
+        SleepEx(1000);
+        speed = readRideSpeed();
+    }
+    if (speed == -1.0f || m_control->IsStopping()) return;
+
+    LogD(_T("坐骑操作：%d   %.1f"), sx, speed);
+    if (sx == 1) {
+        if (speed > 4.7f) return;  // already mounted
+        wUseSk6(0x15, static_cast<DWORD>(-1));
+        for (int index = 0; index < 10 && !m_control->IsStopping(); ++index) {
+            SleepEx(500);
+            speed = readRideSpeed();
+            if (speed > 4.1f) break;
+        }
+    } else {
+        if (speed < 4.7f) return;  // already dismounted
+        wUseSk6(0x15, static_cast<DWORD>(-1));
+        for (int index = 0; index < 10 && !m_control->IsStopping(); ++index) {
+            SleepEx(500);
+            speed = readRideSpeed();
+            if (speed >= 0.0f && speed < 4.1f) break;
+        }
+
+        // Dismounting during the mount-status transition can leave the
+        // movement target stale. Re-issue a tiny offset from the live player
+        // position, equivalent to the reference UpdateZB + wBenTuXuL2 path.
+        if (!m_control->IsStopping() && Read_RWZT() == 5) {
+            Point2f position{};
+            if (ReadNearbyPlayerPosition(position)) {
+                wBenTuXuL2(position.x + 0.1f, position.y);
+            }
+            SleepEx(500);
+        }
+    }
+
+    if (!m_control->IsStopping()) SleepEx(1000);
 }
 
 DWORD CTaskThread::mRead_Buffer(DWORD xuh, CString* name,
@@ -1859,145 +3067,311 @@ DWORD CTaskThread::mRead_Buffer(DWORD xuh, CString* name,
     if (gameModule == 0) return 0;
 
     const DWORD game = static_cast<DWORD>(gameModule);
-    const auto readDword = [this](DWORD address) -> DWORD {
-        return Read_Dw(address);
-    };
+    const DWORD bufferManager = Read_Dw(game + kStateBufferGlobalRva);
+    return ReadStateBufferFromObject(
+        m_dm.get(), targetHwnd, game, bufferManager, xuh,
+        name, description, stateObject);
+}
 
-    // C7C7D0 walks the active-state std::_Tree in in-order order.  Its
-    // sentinel stores the leftmost node at +0 and the root at +4; each node
-    // stores left/parent/right at +0/+4/+8 and the value entry at +0x14.
-    const DWORD bufferManager = readDword(game + kStateBufferGlobalRva);
-    if (!IsPlausibleStatePointer(bufferManager)) return 0;
-
-    const DWORD stateCount = readDword(bufferManager + kStateBufferCountOffset);
-    if (stateCount == 0 || stateCount > kMaximumStateEntries || xuh >= stateCount) {
+DWORD CTaskThread::mRead_BufferCount(DWORD characterObject) {
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd ||
+        !IsPlausibleStatePointer(characterObject)) {
         return 0;
     }
 
-    const DWORD treeHead = readDword(bufferManager + kStateBufferTreeOffset);
+    const DWORD count = Read_Dw(characterObject + kStateBufferCountOffset);
+    return count <= kMaximumStateEntries ? count : 0;
+}
+
+DWORD CTaskThread::mRead_TargetBufferCount(DWORD targetObject) {
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd ||
+        !IsPlausibleStatePointer(targetObject)) {
+        return 0;
+    }
+
+    const DWORD treeHead = Read_Dw(
+        targetObject + kTargetStateTreeOffset);
     if (!IsPlausibleStatePointer(treeHead)) return 0;
 
-    DWORD node = readDword(treeHead + kStateBufferNodeLeftOffset);
-    if (!IsPlausibleStatePointer(node) || node == treeHead) return 0;
+    const DWORD count = Read_Dw(targetObject + kTargetStateCountOffset);
+    return count <= kMaximumStateEntries ? count : 0;
+}
 
-    std::unordered_set<DWORD> visited;
-    visited.reserve(static_cast<size_t>((std::min)(
-        stateCount, static_cast<DWORD>(256))));
-    DWORD entry = 0;
+DWORD CTaskThread::mRead_BufferFromObject(
+    DWORD characterObject, DWORD xuh, CString* name,
+    CString* description, DWORD* stateObject) {
+    if (name != nullptr) name->Empty();
+    if (description != nullptr) description->Empty();
+    if (stateObject != nullptr) *stateObject = 0;
 
-    for (DWORD ordinal = 0; ordinal <= xuh; ++ordinal) {
-        if (!IsPlausibleStatePointer(node) || node == treeHead ||
-            !visited.insert(node).second || visited.size() > kMaximumStateTreeSteps) {
-            return 0;
-        }
-
-        // The byte at +0x0D is the std::_Tree sentinel marker (isnil).
-        if ((readDword(node + 0x0D) & 0xFFu) != 0) return 0;
-
-        if (ordinal == xuh) {
-            entry = readDword(node + kStateBufferNodeValueOffset);
-            break;
-        }
-
-        DWORD right = readDword(node + kStateBufferNodeRightOffset);
-        if (right != 0 && right != treeHead) {
-            DWORD next = right;
-            size_t depth = 0;
-            for (; depth < kMaximumStateTreeSteps; ++depth) {
-                if (!IsPlausibleStatePointer(next) || next == treeHead) return 0;
-                const DWORD left = readDword(next + kStateBufferNodeLeftOffset);
-                if (left == 0 || left == treeHead) break;
-                next = left;
-            }
-            if (depth == kMaximumStateTreeSteps) return 0;
-            node = next;
-        } else {
-            DWORD current = node;
-            DWORD parent = readDword(current + kStateBufferNodeParentOffset);
-            size_t ascent = 0;
-            for (; parent != 0 && parent != treeHead &&
-                   ascent < kMaximumStateTreeSteps; ++ascent) {
-                if (!IsPlausibleStatePointer(parent)) return 0;
-                if (current != readDword(parent + kStateBufferNodeRightOffset)) break;
-                current = parent;
-                parent = readDword(parent + kStateBufferNodeParentOffset);
-            }
-            if (ascent == kMaximumStateTreeSteps) return 0;
-            node = parent;
-        }
-    }
-
-    if (!IsPlausibleStatePointer(entry)) return 0;
-
-    // [entry+8] is read by the original movsx instruction, therefore the
-    // comparison key is a signed 16-bit value rather than a full DWORD.
-    const SHORT stateId = static_cast<SHORT>(
-        static_cast<WORD>(readDword(entry + kStateBufferEntryIdOffset)));
-
-    // 108BB10 is only a virtual thunk.  Its implementation (F10DB0) performs
-    // a signed binary search over manager+0x30, using manager+0x14 as count
-    // and manager+0x40 as the non-empty guard.  Reproduce that data path
-    // directly so no target code is called or patched.
-    const DWORD definitionWrapper = readDword(game + kStateDefinitionGlobalRva);
-    if (!IsPlausibleStatePointer(definitionWrapper)) return 0;
-    const DWORD definitionManager = readDword(
-        definitionWrapper + kStateDefinitionManagerOffset);
-    if (!IsPlausibleStatePointer(definitionManager)) return 0;
-
-    const DWORD definitionCount = readDword(
-        definitionManager + kStateDefinitionCountOffset);
-    const DWORD definitionValid = readDword(
-        definitionManager + kStateDefinitionValidOffset);
-    const DWORD definitionArray = readDword(
-        definitionManager + kStateDefinitionArrayOffset);
-    if (definitionCount == 0 || definitionCount > kMaximumStateEntries ||
-        definitionValid == 0 || !IsPlausibleStatePointer(definitionArray)) {
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd ||
+        !IsPlausibleStatePointer(characterObject)) {
         return 0;
     }
 
-    LONG low = 0;
-    LONG high = static_cast<LONG>(definitionCount - 1);
-    DWORD object = 0;
-    while (low <= high) {
-        const LONG middle = low + (high - low) / 2;
-        const DWORD candidate = readDword(
-            definitionArray + static_cast<DWORD>(middle) * sizeof(DWORD));
-        if (!IsPlausibleStatePointer(candidate)) return 0;
+    const long targetHwnd = static_cast<long>(reinterpret_cast<INT_PTR>(m_wnd->hWnd));
+    LONGLONG gameModule = m_dm->GetModuleBaseAddr(targetHwnd, _T("Game.exe"));
+    if (gameModule == 0 && m_memory) gameModule = m_memory->gameModule;
+    if (gameModule == 0) return 0;
 
-        const LONG candidateId = static_cast<LONG>(
-            readDword(candidate + kStateObjectIdOffset));
-        if (candidateId < static_cast<LONG>(stateId)) {
-            low = middle + 1;
-        } else if (candidateId > static_cast<LONG>(stateId)) {
-            high = middle - 1;
-        } else {
-            object = candidate;
-            break;
+    return ReadStateBufferFromObject(
+        m_dm.get(), targetHwnd, static_cast<DWORD>(gameModule),
+        characterObject, xuh, name, description, stateObject);
+}
+
+DWORD CTaskThread::mRead_TargetBufferFromObject(
+    DWORD targetObject, DWORD xuh, CString* name,
+    CString* description, DWORD* stateObject) {
+    if (name != nullptr) name->Empty();
+    if (description != nullptr) description->Empty();
+    if (stateObject != nullptr) *stateObject = 0;
+
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd ||
+        !IsPlausibleStatePointer(targetObject)) {
+        return 0;
+    }
+
+    const long targetHwnd = static_cast<long>(reinterpret_cast<INT_PTR>(m_wnd->hWnd));
+    LONGLONG gameModule = m_dm->GetModuleBaseAddr(targetHwnd, _T("Game.exe"));
+    if (gameModule == 0 && m_memory) gameModule = m_memory->gameModule;
+    if (gameModule == 0) return 0;
+
+    return ReadTargetStateBufferFromObject(
+        m_dm.get(), targetHwnd, static_cast<DWORD>(gameModule),
+        targetObject, xuh, name, description, stateObject);
+}
+
+DWORD CTaskThread::mRead_TargetObject() {
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd) return 0;
+
+    const long targetHwnd = static_cast<long>(reinterpret_cast<INT_PTR>(m_wnd->hWnd));
+    LONGLONG gameModule = m_dm->GetModuleBaseAddr(targetHwnd, _T("Game.exe"));
+    if (gameModule == 0 && m_memory) gameModule = m_memory->gameModule;
+    if (gameModule == 0) return 0;
+
+    const DWORD game = static_cast<DWORD>(gameModule);
+    const DWORD objectManager = Read_Dw(game + kObjectManagerGlobalRva);
+    if (!IsPlausibleStatePointer(objectManager)) return 0;
+
+    // The selection handle is the canonical source used by the game's
+    // resolver. Prefer resolving it from ObjectManager's tree; fall back to
+    // the +0x48 cache when the handle/tree is being rebuilt during a scene
+    // transition.
+    const DWORD dataPool = Read_Dw(game + kStateBufferGlobalRva);
+    if (IsPlausibleStatePointer(dataPool)) {
+        const LONG selectionHandle = static_cast<LONG>(Read_Dw(
+            dataPool + kSelectionHandleOffset));
+        if (selectionHandle == -1) return 0;
+        if (selectionHandle >= 0) {
+            const DWORD resolved = FindObjectByHandle(
+                m_dm.get(), targetHwnd, objectManager, selectionHandle);
+            if (IsPlausibleStatePointer(resolved)) return resolved;
         }
     }
+
+    const DWORD cachedTarget = Read_Dw(
+        objectManager + kObjectManagerTargetOffset);
+    return IsPlausibleStatePointer(cachedTarget) ? cachedTarget : 0;
+}
+
+DWORD CTaskThread::mRead_TargetBuffer(
+    DWORD xuh, CString* name, CString* description, DWORD* stateObject) {
+    if (name != nullptr) name->Empty();
+    if (description != nullptr) description->Empty();
+    if (stateObject != nullptr) *stateObject = 0;
+
+    const DWORD targetObject = mRead_TargetObject();
+    if (targetObject == 0) return 0;
+
+    return mRead_TargetBufferFromObject(
+        targetObject, xuh, name, description, stateObject);
+}
+
+DWORD CTaskThread::Read_RWZTC2(DWORD erc, std::vector<DWORD> vzt) {
+    varrou.clear();
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd ||
+        !m_memory || vzt.empty()) {
+        return 0;
+    }
+
+    const long targetHwnd = static_cast<long>(
+        reinterpret_cast<INT_PTR>(m_wnd->hWnd));
+    DWORD statusObject = 0;
+    if (erc == 0x1111) {
+        // Self status object: [[ROLEB]+0x64]. ROLEB is the live role slot,
+        // so dereference it once before following the +0x64 component.
+        const DWORD roleSlot = static_cast<DWORD>(jz[TaskMemoryState::ROLEB]);
+        if (IsPlausibleStatePointer(roleSlot)) {
+            const DWORD roleObject = Read_Dw(roleSlot);
+            if (IsPlausibleStatePointer(roleObject)) {
+                statusObject = Read_Dw(roleObject + 0x64);
+            }
+        }
+    } else {
+        if (erc == static_cast<DWORD>(-1)) return 0;
+        // Nearby entries pass the object-manager value slot; dereference it
+        // once to obtain the target object consumed by the +0x130 tree.
+        statusObject = Read_Dw(erc);
+    }
+
+    if (!IsPlausibleStatePointer(statusObject)) return 0;
+    const DWORD treeHead = Read_Dw(statusObject + 0x130);
+    const DWORD count = Read_Dw(statusObject + 0x134);
+    if (!IsPlausibleStatePointer(treeHead) || count == 0 ||
+        count > kMaximumStateEntries) {
+        return 0;
+    }
+
+    CollectStatusTreeValues(m_dm.get(), targetHwnd, treeHead, count, varrou);
+    for (const DWORD stateId : varrou) {
+        if (std::find(vzt.begin(), vzt.end(), stateId) != vzt.end()) {
+            return stateId;
+        }
+    }
+    return 0;
+}
+
+DWORD CTaskThread::Read_RWZTC2(DWORD erc, DWORD zt) {
+    varrou.clear();
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd ||
+        !m_memory) {
+        return 0;
+    }
+
+    const long targetHwnd = static_cast<long>(
+        reinterpret_cast<INT_PTR>(m_wnd->hWnd));
+    DWORD statusObject = 0;
+    if (erc == 0x1111) {
+        const DWORD roleSlot = static_cast<DWORD>(jz[TaskMemoryState::ROLEB]);
+        if (IsPlausibleStatePointer(roleSlot)) {
+            const DWORD roleObject = Read_Dw(roleSlot);
+            if (IsPlausibleStatePointer(roleObject)) {
+                statusObject = Read_Dw(roleObject + 0x64);
+            }
+        }
+    } else {
+        if (erc == static_cast<DWORD>(-1)) return 0;
+        statusObject = Read_Dw(erc);
+    }
+
+    if (!IsPlausibleStatePointer(statusObject)) return 0;
+    const DWORD treeHead = Read_Dw(statusObject + 0x130);
+    const DWORD count = Read_Dw(statusObject + 0x134);
+    if (!IsPlausibleStatePointer(treeHead) || count == 0 ||
+        count > kMaximumStateEntries) {
+        return 0;
+    }
+
+    const bool walked = CollectStatusTreeValues(
+        m_dm.get(), targetHwnd, treeHead, count, varrou);
+    if (!walked) return 0;
+    return std::find(varrou.begin(), varrou.end(), zt) != varrou.end()
+        ? zt
+        : 0;
+}
+
+DWORD CTaskThread::Read_RWZTgs() {
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd) return 0;
+
+    const DWORD roleSlot = static_cast<DWORD>(jz[TaskMemoryState::ROLEB]);
+    if (!IsPlausibleStatePointer(roleSlot)) return 0;
+    const DWORD roleObject = Read_Dw(roleSlot);
+    if (!IsPlausibleStatePointer(roleObject)) return 0;
+
+    const DWORD statusObject = Read_Dw(roleObject + 0x64);
+    if (!IsPlausibleStatePointer(statusObject)) return 0;
+
+    const DWORD count = Read_Dw(statusObject + 0x134);
+    return count <= kMaximumStateEntries ? count : 0;
+}
+
+DWORD CTaskThread::Read_RWJY() {
+    // Current build: experience is character-data + 0x29C0 (the reference
+    // project used the older 0x29B8 offset).
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd ||
+        tsg[TaskMemoryState::Shuxtb].IsEmpty()) {
+        return 0;
+    }
+
+    const DWORD characterData = Read_Dw(tsg[TaskMemoryState::Shuxtb]);
+    if (!IsPlausibleStatePointer(characterData)) return 0;
+    return Read_Dw(characterData + 0x29C0);
+}
+
+int CTaskThread::Read_GENS() {
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd ||
+        tsg[TaskMemoryState::Shuxtb].IsEmpty()) {
+        return 0;
+    }
+
+    const DWORD characterData = Read_Dw(tsg[TaskMemoryState::Shuxtb]);
+    if (!IsPlausibleStatePointer(characterData)) return 0;
+    return static_cast<int>(Read_Dw(characterData + 0x68C));
+}
+
+int CTaskThread::Read_MoZTT(DWORD gwdz) {
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd ||
+        gwdz == 0 || gwdz == static_cast<DWORD>(-1)) {
+        return 0;
+    }
+
+    // Nearby records pass the value slot (the same +0x14 slot retained in
+    // Monst::Dibu). Dereference it first, then read the monster state at
+    // object +0x14C as in the reference expression "[gwdz]+14C".
+    const DWORD object = Read_Dw(gwdz);
     if (!IsPlausibleStatePointer(object)) return 0;
+    return static_cast<int>(Read_Dw(object + 0x14C));
+}
 
-    const DWORD objectId = readDword(object + kStateObjectIdOffset);
-    if (static_cast<LONG>(objectId) != static_cast<LONG>(stateId)) return 0;
-
-    if (stateObject != nullptr) *stateObject = object;
-    if (name != nullptr) {
-        const DWORD nameAddress = readDword(object + kStateObjectNameOffset);
-        if (IsPlausibleStatePointer(nameAddress)) {
-            *name = m_dm->ReadStringAddr(
-                targetHwnd, static_cast<LONGLONG>(nameAddress), 0, 0);
-        }
+int CTaskThread::Read_ATID() {
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd ||
+        tsg[TaskMemoryState::GJID].IsEmpty()) {
+        return 0;
     }
-    if (description != nullptr) {
-        const DWORD descriptionAddress = readDword(
-            object + kStateObjectDescriptionOffset);
-        if (IsPlausibleStatePointer(descriptionAddress)) {
-            *description = m_dm->ReadStringAddr(
-                targetHwnd, static_cast<LONGLONG>(descriptionAddress), 0, 0);
-        }
+    return static_cast<int>(Read_Dw(tsg[TaskMemoryState::GJID]));
+}
+
+int CTaskThread::Read_ATID(DWORD gwdz) {
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd ||
+        gwdz == 0 || gwdz == static_cast<DWORD>(-1)) {
+        return 0;
     }
 
-    return objectId;
+    const DWORD object = Read_Dw(gwdz);
+    if (!IsPlausibleStatePointer(object)) return 0;
+    return static_cast<int>(Read_Dw(object + 0x214));
+}
+
+int CTaskThread::Read_DTID() {
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd) return 0;
+
+    // MYDITUP resolves to the live map object.  Its current map ID is stored
+    // at +0x50, matching the reference expression "[MYDITUP]+50".
+    const DWORD mapObject = static_cast<DWORD>(jz[TaskMemoryState::MyDiTu]);
+    if (!IsPlausibleStatePointer(mapObject)) return 0;
+    return static_cast<int>(Read_Dw(mapObject + 0x50));
+}
+
+int CTaskThread::Read_RWZT(bool qzjc) {
+    // Match the reference implementation: normal reads are throttled to one
+    // remote-memory query every 500 ms, while qzjc forces an immediate read.
+    // The cached value/timestamp live in TaskMemoryState so all worker
+    // threads for a window observe the same state, just like the original
+    // Mams[drwzt]/Mams[dztsj] slots.
+    const DWORD now = ::GetTickCount();
+    if (!qzjc && now - Mams[dztsj] < 500) {
+        return static_cast<int>(Mams[drwzt]);
+    }
+
+    Mams[dztsj] = now;
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd ||
+        tsg[TaskMemoryState::m_Dqzt].IsEmpty()) {
+        Mams[drwzt] = 0;
+        return 0;
+    }
+
+    Mams[drwzt] = Read_Dw(tsg[TaskMemoryState::m_Dqzt]);
+    return static_cast<int>(Mams[drwzt]);
 }
 
 bool CTaskThread::mCanAttack(DWORD zjdz, DWORD Mid)

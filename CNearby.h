@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CTaskThread.h"
 
@@ -15,4 +15,9 @@ protected:
     // task class owns the actual loop implementation.
     virtual bool OnLoop() override = 0;
     virtual bool ScanNearbyOnce();
+
+
+public:
+    void mChusrw();//初始化人物
+
 };

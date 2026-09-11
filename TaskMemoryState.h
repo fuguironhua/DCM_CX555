@@ -1,6 +1,7 @@
 #pragma once
 
 #include "framework.h"
+#include "structs.h"
 #include <array>
 
 // Window-name slots copied from the reference project's Fruit15 enum.
@@ -36,8 +37,10 @@ enum Fruit15 : size_t {
     PaoShang_ItemInfo2_Price,
     PaoShang_ItemInfo3_Price,
     ZhouHuoYue_Condition_Text,
+    MiniMap_Placename,
     Fruit15Count
 };
+
 
 // Address and expression storage shared by the three threads belonging to
 // one window. This replaces the reference project's process-wide jz/tsg
@@ -58,9 +61,44 @@ struct TaskMemoryState {
         rwlq, mmsp, tdiax, tdqhct, tjrhct, wpcs, ExpressionSlotCount = 30
     };
 
+    // Indices retained from the reference project Fruit4 enum.
+    enum BagSlot : size_t {
+        baxue,
+        balan,
+        bacow,
+        balsy,
+        BagSlotCount
+    };
+
+    enum MamsSlot : size_t {
+        Menpaid = 0,
+        BagMax1 = 1,
+        BagMax2 = 2,
+        BagMax3 = 3,
+        JiGj = 15,
+        CoXuHa = 23,
+        Cox1 = 24,
+        Cox2 = 25,
+        duibxh = 26,
+        benbxh = 27,
+        Jijl = 39,
+        dxuem = 59,
+        ddenj = 70,
+        dZJID = 71,
+        // Read_RWZT cache slots retained from the reference task thread.
+        // They keep the last status value and the timestamp of the last
+        // uncached read in the shared per-window memory state.
+        dztsj = 72,
+        dzbsj = 73,
+        drwzt = 74,
+        MamsSlotCount = 100
+    };
+
     std::array<LONGLONG, AddressSlotCount> addresses{};
     std::array<CString, ExpressionSlotCount> expressions{};
     std::array<LONGLONG, Fruit15Count> windowAddresses{};
+    std::array<DWORD, MamsSlotCount> mams{};
+    std::array<BagItem, BagSlotCount> bag{};
     LONGLONG gameModule = 0;
     LONGLONG ceguiModule = 0;
     LONGLONG kernel32Module = 0;
@@ -76,6 +114,8 @@ struct TaskMemoryState {
         addresses.fill(0);
         expressions = {};
         windowAddresses.fill(0);
+        mams.fill(0);
+        bag = {};
         gameModule = 0;
         ceguiModule = 0;
         kernel32Module = 0;
@@ -114,3 +154,17 @@ private:
 };
 
 using TaskMemoryStatePtr = std::shared_ptr<TaskMemoryState>;
+
+#define CLOSE_NPC _T("setmetatable(_G, {__index = Quest_Env});Quest_Close();")
+#define DKRICH _T("setmetatable(_G, {__index = PlayerQuicklyEnter_Env});PlayerQuicklyEnter_Clicked(2);")
+#define GBRICH _T("setmetatable(_G, {__index = ZhouHuoYue_Env});ZhouHuoYue_Close();")
+#define DKSAOD _T("setmetatable(_G, {__index = PlayerQuicklyEnter_Env});PlayerQuicklyEnter_Clicked(1);")
+#define GBSAOD _T("setmetatable(_G, {__index = SweepAll_Env});SweepAll_OnClosed();")
+#define KGZDZD _T("setmetatable(_G, { __index = MiniMap_Env }); MiniMap_ZDZD();")
+#define XUNLQR _T("setmetatable(_G, { __index = MessageBox_Self_Env }); MessageBox_Self_OK_Clicked();")
+#define XUNLQR2 _T("setmetatable(_G, {__index = AcceptBox_Env}); AcceptBox_OK_Clicked();")
+#define FUBHIL _T("setmetatable(_G, {__index = Higntlight_Env}); Higntlight_OnClose();")
+#define CHTABL _T("setmetatable(_G, {__index = Packet_Env}); Packet_ChangeTabIndex(1);")
+#define SHANFH _T("setmetatable(_G, {__index = CityShop_Env});this:Hide();")
+#define BAGDAK _T("setmetatable(_G, {__index = MainMenuBar_Env});MainMenuBar_Packet_Clicked();")
+#define BAGGUB _T("setmetatable(_G, {__index = Packet_Env});Packet_Close();")

@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "CTaskScript.h"
+#include "TeamServerClient.h"
 
 #include <mutex>
 #include <vector>
@@ -9,49 +10,66 @@ namespace {
 // These are the CX5 offsets used by the reference constructor. They are
 // deliberately kept as data in the new per-window state instead of being
 // process-wide globals.
-constexpr LONGLONG kRolePointerOffset = 3214459;       // ROLEP
-constexpr LONGLONG kBagPointerOffset = 3207721;        // BAGBP
-constexpr LONGLONG kMapPointerOffset = 3331049;        // MYDITUP
-constexpr LONGLONG kRoleWorkOffset = 2087836;          // RENWP
-constexpr LONGLONG kRoleErcOffset = 1612087;           // RENERCP
-constexpr LONGLONG kHookCodeOffset = 3418454;          // HHKK3P
-constexpr LONGLONG kLuaOffset = 3734117;               // LUAP
-constexpr LONGLONG kBagSplitOffset = 89050;
-constexpr LONGLONG kMonsterFenOffset = 1654025;        // MONSTFENP
-constexpr LONGLONG kSleepOffset = 3151301;             // KESLEEPP
-constexpr LONGLONG kGetTickOffset = 3474329;           // KEGETTIP
-constexpr LONGLONG kLuaDoStringOffset = 2752698;       // GALUADOSP
-constexpr LONGLONG kGameThreadOffset = 3146895;        // GAZHANTP
-constexpr LONGLONG kSendOffset = 3894690;              // GAWSENDP
-constexpr LONGLONG kTerminateThreadOffset = 3148194;   // KETERMTP
-constexpr LONGLONG kMapTransitionOffset = 1888884;     // KUATUXLP
-constexpr LONGLONG kTeamOffset = 541221;               // GADUIWP
-constexpr LONGLONG kDebugOffset = 3385445;             // GADEBUGP
-constexpr LONGLONG kStringOffset = 2752950;            // GSTRSTRP
-constexpr LONGLONG kTaskHookOffset = 2539575;           // HKRWZTP
-constexpr LONGLONG kShopOffset = 3535740;              // SHANGHP
-constexpr LONGLONG kActivityOffset = 672122;           // HUOYP
-constexpr LONGLONG kSweepOffset = 644834;              // SAODP
-constexpr LONGLONG kKeyInputOffset = 3147544;          // SHIJEP
-constexpr LONGLONG kMemoryCopyOffset = 5871678;        // MEMCP
-constexpr LONGLONG kRoleNameOffset = 2094312;          // RENMSP
-constexpr LONGLONG kAttackNumberOffset = -7274496;     // ATTNUMP
-constexpr LONGLONG kBufferClearOffset = 2542023;       // BUFXP
-constexpr LONGLONG kWindowBaseOffset = 1124160;        // WPBDP
+constexpr LONGLONG kRolePointerOffset = 3215387;       // ROLEP
+constexpr LONGLONG kBagPointerOffset = 3208649;        // BAGBP
+constexpr LONGLONG kMapPointerOffset = 3332009;        // MYDITUP
+constexpr LONGLONG kRoleWorkOffset = 2088956;          // RENWP
+constexpr LONGLONG kRoleErcOffset = 1612647;           // RENERCP
+constexpr LONGLONG kHookCodeOffset = 3419126;          // HHKK3P
+constexpr LONGLONG kLuaOffset = 3734389;               // LUAP
+constexpr LONGLONG kBagSplitOffset = 89050;             // FENGBP
+constexpr LONGLONG kMonsterFenOffset = 1655081;        // MONSTFENP
+constexpr LONGLONG kSleepOffset = 3152213;             // KESLEEPP
+constexpr LONGLONG kGetTickOffset = 3475065;           // KEGETTIP
+constexpr LONGLONG kLuaDoStringOffset = 2753802;       // GALUADOSP
+constexpr LONGLONG kGameThreadOffset = 3147807;        // GAZHANTP
+constexpr LONGLONG kSendOffset = 3894866;              // GAWSENDP
+constexpr LONGLONG kTerminateThreadOffset = 3149106;   // KETERMTP
+constexpr LONGLONG kMapTransitionOffset = 1890052;     // KUATUXLP
+constexpr LONGLONG kTeamOffset = 540549;               // GADUIWP
+constexpr LONGLONG kDebugOffset = 3386405;             // GADEBUGP
+constexpr LONGLONG kStringOffset = 2754054;            // GSTRSTRP
+constexpr LONGLONG kTaskHookOffset = 2540743;           // HKRWZTP
+constexpr LONGLONG kShopOffset = 3536012;              // SHANGHP
+constexpr LONGLONG kActivityOffset = 671450;           // HUOYP
+constexpr LONGLONG kSweepOffset = 644178;              // SAODP
+constexpr LONGLONG kKeyInputOffset = 3148456;          // SHIJEP
+constexpr LONGLONG kMemoryCopyOffset = 5875630;        // MEMCP
+constexpr LONGLONG kRoleNameOffset = 2095432;          // RENMSP
+constexpr LONGLONG kAttackNumberOffset = -6160384;     // ATTNUMP
+constexpr LONGLONG kBufferClearOffset = 2543191;       // BUFXP
+constexpr LONGLONG kWindowBaseOffset = 1123760;        // WPBDP
 constexpr LONGLONG kSweepDetailOffset = 147281;        // SAODDP
-constexpr LONGLONG kWindowOpenOffset = 312859;         // WNDOPP
-constexpr LONGLONG kSceneHeightOffset = 625840;
-constexpr LONGLONG kBagHelperOffset = 518688;
-constexpr LONGLONG kMapCheckOffset = 806864;           // GAXUNLUGP
+constexpr LONGLONG kWindowOpenOffset = 312923;         // WNDOPP
+constexpr LONGLONG kSceneHeightOffset = 625840;         // SHIHP
+constexpr LONGLONG kBagHelperOffset = 518688;           // BAGJHP
+constexpr LONGLONG kMapCheckOffset = 806480;           // GAXUNLUGP
+
+// Retained offsets for task paths that are not wired into this framework yet.
+constexpr LONGLONG kF1Offset = -6160382;               // F1FP
+constexpr LONGLONG kRoleEcxOffset = 1095905;            // RENWECXP
+constexpr LONGLONG kLocalMoveOffset = 1073595;          // BENTUXLP
+constexpr LONGLONG kSelectTargetOffset = 6093999;       // XZZTP
+constexpr LONGLONG kLocalMove2Offset = -6160382;        // BENTUXL2P
+constexpr LONGLONG kRunOpenOffset = -6160374;           // RUNOPENP
+constexpr LONGLONG kSelectOffset = -6160382;            // XUANP
+constexpr LONGLONG kSkillOffset = 1012626;              // SKILLP
+constexpr LONGLONG kUseBagOffset = -6160370;            // USEBAGP
+constexpr LONGLONG kMapCheckCallOffset = -6160372;      // GAXUNLUCP
+constexpr LONGLONG kLocalMove3Offset = 1849450;         // BENTUXL3P
+constexpr LONGLONG kWindowDetailOffset = 3650128;       // WPJDP
+constexpr LONGLONG kCeguiFAOffset = 250155;             // CEFAP
 constexpr LONGLONG MANAGEP = 0x24BD3C;           // MANAGEP
 // Updated 32-bit build: mov ecx, dword ptr ds:[00B46034].
 // Current Game.exe base is 0x00380000, so the relocatable module RVA is
 // 0x00B46034 - 0x00380000 = 0x007C6034.
-constexpr LONGLONG RIDEP = 0x007C6034;
+constexpr LONGLONG RIDEP = 0x007C7034;
 constexpr LONGLONG PaoShangSceneManagerGlobal = 0x7CE46C;
 constexpr LONGLONG PaoShangSceneManagerCache = 0x7CBD98;
 
 constexpr LONGLONG kCharacterNameOffset = 0x2C;        // namz
+constexpr LONGLONG kMenPaiOffset = 0xD0;               // MenPai
+constexpr LONGLONG kLevelOffset = 0x60;                // dengj
 constexpr unsigned long kLuqiOffset = 0x64;
 
 // The cache is intentionally keyed by the game window handle.  A handle is
@@ -471,8 +489,8 @@ bool CTaskScript::InitializeGameState() {
     expression[TaskMemoryState::ZJID].Format(_T("[[%08lX]+64]+2C"), hex32(memory.addresses[TaskMemoryState::ROLEB]));
     expression[TaskMemoryState::m_Dqzt].Format(_T("[[%08lX]+64]+14c"), hex32(memory.addresses[TaskMemoryState::ROLEB]));
     expression[TaskMemoryState::Shuxtb].Format(_T("[[[%08lX]+64]+148]+10"), hex32(memory.addresses[TaskMemoryState::ROLEB]));
-    expression[TaskMemoryState::shuxcw].Format(_T("[%08lX]+65EC0"), hex32(memory.addresses[TaskMemoryState::BagJ]));
-    expression[TaskMemoryState::shuxbg].Format(_T("[%08lX]+22A9C"), hex32(memory.addresses[TaskMemoryState::BagJ]));
+    expression[TaskMemoryState::shuxcw].Format(_T("[%08lX]+6711C"), hex32(memory.addresses[TaskMemoryState::BagJ]));
+    expression[TaskMemoryState::shuxbg].Format(_T("[%08lX]+22C00"), hex32(memory.addresses[TaskMemoryState::BagJ]));
     expression[TaskMemoryState::Rwerc].Format(_T("[%08lX]+4"), hex32(memory.addresses[TaskMemoryState::RenWERC]));
     expression[TaskMemoryState::GJID].Format(_T("[[%08lX]+64]+214"), hex32(memory.addresses[TaskMemoryState::ROLEB]));
     expression[TaskMemoryState::rwxl].Format(_T("[[[[%08lX]+64]+148]+10]+8"), hex32(memory.addresses[TaskMemoryState::ROLEB]));
@@ -513,6 +531,149 @@ bool CTaskScript::InitializeGameState() {
                        memory.expressions[TaskMemoryState::m_Name].GetString());
     DebugLog(nameMessage);
 
+    const auto resolveConfigPath = [&root](const wchar_t* fileName) {
+        std::filesystem::path path = root / fileName;
+        if (!std::filesystem::exists(path)) {
+            path = root / L"config" / fileName;
+        }
+        return CString(path.c_str());
+    };
+    const CString globalConfigPath =
+        resolveConfigPath(L"全局配置.ini");
+    const CString characterConfigPath =
+        resolveConfigPath(L"人物配置.ini");
+
+    tsg[TaskMemoryState::m_Djxh] = Dm()->ReadIni(
+        _T("窗口"), _T("本地序号"),
+        globalConfigPath.GetString());
+    if (tsg[TaskMemoryState::m_Djxh].IsEmpty()) {
+        tsg[TaskMemoryState::m_Djxh] = _T("NULL");
+    }
+
+    if (dwls != 0) {
+        const char* menPai = reinterpret_cast<const char*>(
+            static_cast<ULONG_PTR>(dwls) +
+            static_cast<ULONG_PTR>(kMenPaiOffset));
+        Mams[Menpaid] = static_cast<DWORD>(
+            static_cast<unsigned char>(*menPai));
+    }
+
+    CString levelExpression;
+    levelExpression.Format(_T("[[[[%08x]+64]+148]+10]+%08x"),
+                           static_cast<DWORD>(jz[TaskMemoryState::ROLEB]),
+                           static_cast<DWORD>(kLevelOffset));
+    Mams[dxuem] = static_cast<DWORD>(
+        Dm()->ReadInt(mmhwnd, levelExpression, 4));
+    Mams[ddenj] = Mams[dxuem];
+    Mams[dxuem] = (Mams[dxuem] < 50) ? 15 : 25;
+
+    if (tsg[TaskMemoryState::m_Name] != _T("NULL")) {
+        Dm()->WriteIni(_T("CQ"), _T("zhmm"),
+                       tsg[TaskMemoryState::m_Name].GetString(),
+                       globalConfigPath.GetString());
+    }
+
+    tsg[TaskMemoryState::luxi] = Dm()->ReadIni(
+        myNamls.GetString(), _T("luxi"),
+        characterConfigPath.GetString());
+    Mams[benbxh] = static_cast<DWORD>(_ttoi(
+        Dm()->ReadIni(myNamls.GetString(), _T("benbxh"),
+                      characterConfigPath.GetString()).GetString()));
+    Mams[duibxh] = static_cast<DWORD>(_ttoi(
+        Dm()->ReadIni(myNamls.GetString(), _T("duibxh"),
+                      characterConfigPath.GetString()).GetString()));
+    tsg[TaskMemoryState::mmsp] = Dm()->ReadIni(
+        myNamls.GetString(), _T("mmwp"),
+        characterConfigPath.GetString());
+
+    if (tsg[TaskMemoryState::luxi].GetLength() < 6) {
+        CTeamServerClient server(m_ini.serverUrl, 2000);
+        const CString response = server.SendOnlineCommand3(
+            _T("luxi"),
+            tsg[TaskMemoryState::m_Djxh],
+            tsg[TaskMemoryState::m_Name]);
+
+        OnlineLuxiResult serverResult;
+        if (CTeamServerClient::ParseOnlineLuxiResponse(response, serverResult)) {
+            tsg[TaskMemoryState::luxi] = serverResult.luxi;
+            Mams[benbxh] = serverResult.benbxh;
+            Mams[duibxh] = serverResult.duibxh;
+
+            Dm()->WriteIni(
+                tsg[TaskMemoryState::m_Name].GetString(),
+                _T("luxi"),
+                tsg[TaskMemoryState::luxi].GetString(),
+                characterConfigPath.GetString());
+            Dm()->WriteIni(
+                tsg[TaskMemoryState::m_Name].GetString(),
+                _T("benbxh"),
+                serverResult.benbxhText.GetString(),
+                characterConfigPath.GetString());
+            Dm()->WriteIni(
+                tsg[TaskMemoryState::m_Name].GetString(),
+                _T("duibxh"),
+                serverResult.duibxhText.GetString(),
+                characterConfigPath.GetString());
+        } else {
+            DebugLog(_T("server luxi query failed: %s"), response.GetString());
+        }
+    }
+
+    CString initMessage;
+    initMessage.Format(
+        _T("character init: index=%s name=%s menpai=%lu level=%lu "
+           "threshold=%lu luxi=%s benbxh=%lu duibxh=%lu mmwp=%s"),
+        tsg[TaskMemoryState::m_Djxh].GetString(),
+        tsg[TaskMemoryState::m_Name].GetString(),
+        static_cast<unsigned long>(Mams[Menpaid]),
+        static_cast<unsigned long>(Mams[ddenj]),
+        static_cast<unsigned long>(Mams[dxuem]),
+        tsg[TaskMemoryState::luxi].GetString(),
+        static_cast<unsigned long>(Mams[benbxh]),
+        static_cast<unsigned long>(Mams[duibxh]),
+        tsg[TaskMemoryState::mmsp].GetString());
+    DebugLog(initMessage);
+
+    // Bag counts + deployed pet: migrated from the reference CTaskScript.cpp
+    // block at line 539. Notes for this port:
+    //  - the reference used ReadDataToBin() (raw bytes read at the resolved
+    //    expression). UpdateMP() would add one extra dereference, so the same
+    //    dmsoft call is kept here.
+    //  - this client build keeps the per-page bag capacities 0x164 bytes
+    //    higher than the reference client: +22C14 instead of +22AB0
+    //    (live: 68 / 68 / 20 for page 1 / 2 / 3).
+    {
+        CString bagCountExpression;
+        bagCountExpression.Format(_T("[%08lX]+22C14"),
+                                  static_cast<unsigned long>(jz[TaskMemoryState::BagJ]));
+        dwls = static_cast<DWORD>(Dm()->ReadDataToBin(
+            targetHwnd, bagCountExpression.GetString(), 2));
+        if (dwls != 0) {
+            const auto* bagCounts = reinterpret_cast<const BYTE*>(
+                static_cast<ULONG_PTR>(dwls));
+            Mams[BagMax1] = bagCounts[0];
+            Mams[BagMax2] = bagCounts[1];
+            Mams[CoXuHa] = static_cast<DWORD>(Read_PetMx());// deployed pet check
+            DebugLog(_T("\u6570\u91cf\uff1a%lu   %lu"),
+                     static_cast<unsigned long>(Mams[BagMax1]),
+                     static_cast<unsigned long>(Mams[BagMax2]));
+
+            bag[baxue] = Read_BagX(1);
+            bag[balan] = Read_BagX(2);
+            bag[bacow] = Read_BagX(3);
+            DebugLog(_T("\u5ba0\u7269\uff1a%lu  jxuewp:%lu"),
+                     static_cast<unsigned long>(Mams[CoXuHa]),
+                     static_cast<unsigned long>(bag[bacow].xuh));
+        } else {
+            DebugLog(_T("bag count read failed: expr=%s BagJ=0x%08lX"),
+                     bagCountExpression.GetString(),
+                     static_cast<unsigned long>(jz[TaskMemoryState::BagJ]));
+        }
+    }
+    // Reference CTaskScript.cpp:570 - reset the task/NPC working tables.
+    VRenw = VRENW;  VHuod = VHUOD;
+    mChusrw();
+
     // Keep the per-window remote memory information in the global cache.
     // Layout:
     //   [QBJB]
@@ -533,7 +694,7 @@ bool CTaskScript::InitializeGameState() {
         std::scoped_lock cacheLock(g_globalConfigMutex);
 
         auto& address = memory.addresses;
-        const CString iniPath = CString((root / L"全局配置.ini").c_str());
+        const CString iniPath = globalConfigPath;
 
         SYSTEMTIME now{};
         ::GetLocalTime(&now);
@@ -632,7 +793,7 @@ bool CTaskScript::InitializeGameState() {
                     static_cast<LONGLONG>(parsedNbsq);
 
                 CString cacheMessage;
-                cacheMessage.Format(_T("global cache hit: hwnd=%s, Nbsq=%I64u"),
+                cacheMessage.Format(_T("global cache hit: hwnd=%s, Nbsq=%08x"),
                                     handleKey.GetString(), parsedNbsq);
                 DebugLog(cacheMessage);
             } else {
@@ -722,7 +883,7 @@ bool CTaskScript::InitializeGameState() {
         *(DWORD*)(Tiaoz1 + 0x2C) = jz[TaskMemoryState::Nbsq] + 160 + 0x9B + 8;
         *(DWORD*)(Tiaoz1 + 0x35) = jz[TaskMemoryState::BagEcx];
         *(DWORD*)(Tiaoz1 + 0x46) = jz[TaskMemoryState::Nbsq] + 160 + 0x9B + 12;
-        *(DWORD*)(Tiaoz1 + 0x4B) = jz[TaskMemoryState::Nbsq] + 0x1000;
+        *(DWORD*)(Tiaoz1 + 0x4B) = jz[TaskMemoryState::Nbsq] + 0x1000;//封内
         *(DWORD*)(Tiaoz1 + 0x6F) = jz[TaskMemoryState::Wsasend];
         *(DWORD*)(Tiaoz1 + 0x7A) = jz[TaskMemoryState::Nbsq] + 160 + 0x9B + 12;
         *(DWORD*)(Tiaoz1 + 0x86) = jz[TaskMemoryState::Nbsq] + 160 + 0x9B + 8;
@@ -759,14 +920,31 @@ bool CTaskScript::InitializeGameState() {
 		*(DWORD*)(Xuanz + 20) = FENGT - 560 - 0x18;
 		Dm()->WriteDataAddrFromBin(mmhwnd, jz[TaskMemoryState::Nbsq] + 560, (DWORD)Xuanz, 0x18);//需要检查
 
+        *(DWORD*)(WsUseSk2 + 0x1D) = jz[TaskMemoryState::ROLEB];
+		*(DWORD*)(WsUseSk2 + 66) = FENGT - 590 - 0x46;
+		Dm()->WriteDataAddrFromBin(mmhwnd, jz[TaskMemoryState::Nbsq] + 590, (DWORD)WsUseSk2, 0x46);//需要检查
+
+        *(DWORD*)(LuaDostring + 1) = jz[TaskMemoryState::Nbsq] + 0x1000;
+        *(DWORD*)(LuaDostring + 6) = jz[TaskMemoryState::luaState];
+        *(DWORD*)(LuaDostring + 0xC) = jz[TaskMemoryState::Luadost];
+        Dm()->WriteDataAddrFromBin(mmhwnd, jz[TaskMemoryState::Nbsq] + 670, (DWORD)LuaDostring, 0x14);//
+
+		*(DWORD*)(ClickNpc + 37) = FENGT - 700 - 0x29;
+		Dm()->WriteDataAddrFromBin(mmhwnd, jz[TaskMemoryState::Nbsq] + 700, (DWORD)ClickNpc, 0x29);//需要检查
+
+		*(DWORD*)(CwCz + 37) = FENGT - 750 - 0x29;
+		Dm()->WriteDataAddrFromBin(mmhwnd, jz[TaskMemoryState::Nbsq] + 750, (DWORD)CwCz, 0x29);//需要检查
+
+		*(DWORD*)(UseBag + 80) = FENGT - 800 - 0x54;
+		Dm()->WriteDataAddrFromBin(mmhwnd, jz[TaskMemoryState::Nbsq] + 800, (DWORD)UseBag, 0x54);//需要检查
+
     }
 
 
     {
         ck[Manager] = memory.ceguiBaseModule + MANAGEP;
         ck[Frame_Zhy] = FindCeguiWindowByName(_T("ZhouHuoYue_FrameFull"));
-        ck[ZhouHuoYue_Condition_Text] = FindCeguiWindowByName(
-            _T("ZhouHuoYue_Condition_Text"));
+        ck[ZhouHuoYue_Condition_Text] = FindCeguiWindowByName( _T("ZhouHuoYue_Condition_Text"));
         ck[PlayerFrame_Icon] = FindCeguiWindowByName(_T("PlayerFrame_Icon"));
         ck[SceneTrans_Frame] = FindCeguiWindowByName(_T("SceneTrans_Frame"));
         ck[Packet_Frame] = FindCeguiWindowByName(_T("Packet_Frame"));
@@ -783,6 +961,8 @@ bool CTaskScript::InitializeGameState() {
 		ck[MessageBox_Self_Text] = FindCeguiWindowByName(_T("MessageBox_Self_Text"));
 		ck[AcceptBox_Frame] = FindCeguiWindowByName(_T("AcceptBox_Frame"));
 		ck[AcceptBox_Text] = FindCeguiWindowByName(_T("AcceptBox_Text"));
+        ck[MiniMap_Placename] = FindCeguiWindowByName(_T("MiniMap_Placename"));
+
 
 
     }
@@ -912,6 +1092,31 @@ void CTaskScript::Fun_Zhengl()      { RunTaskStub(_T("Fun_Zhengl"),      _T("\u6
 void CTaskScript::Fub_DYanz2()      { RunTaskStub(_T("Fub_DYanz2"),      _T("\u5355\u71d52")); }
 
 void CTaskScript::Fub_Test() {
+    const CString mapName = cRead_CeguiText(MiniMap_Placename);
+
+    wUseBag2x(1);
+    //mLua_Dostr(CLOSE_NPC);
+    //wUseSk6(0x15, -1);
+    //for (int Index = 0; Index < 2 ; Index++) {
+    //    CString cccc = Read_NpcT(Index);
+    //    DebugLog(_T("NPC[%d] len=%d text=%s"),
+    //             Index, cccc.GetLength(), cccc.GetString());
+    //}
+
+	//const int skillNodeCount = BianSK(0);
+	//DebugLog(_T("BianSK test: nodes=%d"), skillNodeCount);
+	//for (size_t i = 0; i < varrou.size(); ++i) {
+	//	const DWORD node = varrou[i];
+	//	const DWORD skillId = Read_Dw(node + 0x10);
+	//	DebugLog(_T("BianSK[%lu]: node=0x%08lX id=0x%08lX"),
+	//		static_cast<unsigned long>(i),
+	//		static_cast<unsigned long>(node),
+	//		static_cast<unsigned long>(skillId));
+	//}
+
+    //wClickNpc(1);
+    //wPet_Chu(0,0);
+
     //DebugLog(_T("人物状态测试：读取前 5 个状态"));
     //for (DWORD xuh = 0; xuh < 5; ++xuh) {
     //    CString name;
@@ -932,8 +1137,24 @@ void CTaskScript::Fub_Test() {
     //}
 
 
-    DebugLog(_T("mRead_BangZw result: %lu"),
-             static_cast<unsigned long>(mRead_BangZw()));
+	//DebugLog(_T("mRead_BangZw result: %lu"), static_cast<unsigned long>(mRead_BangZw()));
+
+	//const CString blueBirdName = _T("\u5C0F\u84DD\u9E1F");
+	//const DWORD blueBird = FindNearbyObjectByName(blueBirdName);
+
+	//if (blueBird == 0) {
+	//	DebugLog(_T("\u5C0F\u84DD\u9E1F not found"));
+	//}
+	//else {
+	//	const DWORD stateCount = mRead_TargetBufferCount(blueBird);
+
+	//	for (DWORD xuh = 0; xuh < stateCount; ++xuh) {
+	//		CString name;
+	//		CString description;
+	//		DWORD stateObject = 0;
+	//		const DWORD stateId = mRead_TargetBufferFromObject(blueBird, xuh, &name, &description, &stateObject);
+	//	}
+	//}
 
 
     //wBenTuXuL2(155, 155);
@@ -945,6 +1166,5 @@ void CTaskScript::Fub_Test() {
     //               hasRide ? 1 : 0,
     //               hasRide ? _T("有") : _T("没有"));
     //DebugLog(message);
-
 
 }

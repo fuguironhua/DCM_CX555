@@ -111,10 +111,12 @@
     <ClInclude Include="CTaskManager.h" />
     <ClInclude Include="DCMDlg.h" />
     <ClInclude Include="HttpClient.h" />
+    <ClInclude Include="TeamServerClient.h" />
     <ClInclude Include="PauseController.h" />
     <ClInclude Include="TaskMemoryState.h" />
     <ClInclude Include="TaskSchedule.h" />
     <ClInclude Include="structs.h" />
+    <ClInclude Include="TaskNpcTables.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="resource.h" />
@@ -132,6 +134,7 @@
     <ClCompile Include="CTaskManager.cpp" />
     <ClCompile Include="DCMDlg.cpp" />
     <ClCompile Include="HttpClient.cpp" />
+    <ClCompile Include="TeamServerClient.cpp" />
     <ClCompile Include="DCM.cpp" />
     <ClCompile Include="obj.cpp" />
     <ClCompile Include="pch.cpp">
