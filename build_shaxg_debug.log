@@ -1,0 +1,293 @@
+生成启动时间为 2026-09-17 14:27:06。
+日志记录详细程度设置为: Normal。Included response file: C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.rsp
+
+     1>项目“D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.sln”在节点 1 上(Build 个目标)。
+     1>ValidateSolutionConfiguration:
+         正在生成解决方案配置“Debug|Win32”。
+     1>项目“D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.sln”(1)正在节点 1 上生成“D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj”(2) (默认目标)。
+     2>InitializeBuildStatus:
+         正在对“D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\DCM.tlog\unsuccessfulbuild”执行 Touch 任务。
+       ClCompile:
+         所有输出均为最新。
+         C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.35.32215\bin\HostX86\x86\CL.exe /c /I"D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\\" /ZI /JMC /nologo /W3 /WX- /diagnostics:column /sdl- /Od /Oy- /D WIN32 /D _WINDOWS /D _DEBUG /D _UNICODE /D UNICODE /D _AFXDLL /Gm- /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++17 /Yu"pch.h" /Fp"D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\DCM.pch" /Fo"D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\\" /Fd"D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\vc143.pdb" /external:W3 /Gd /TP /analyze- /FC /errorReport:queue /utf-8 CNearby.cpp CTaskHelperScript.cpp CTaskHelperYan.cpp CTaskManager.cpp CTaskScript.cpp CTaskThread.cpp DCM.cpp DCMDlg.cpp
+         CNearby.cpp
+         CTaskHelperScript.cpp
+         CTaskHelperYan.cpp
+         CTaskManager.cpp
+         CTaskScript.cpp
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(885,70): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(886,69): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(887,70): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(888,69): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(889,70): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(890,69): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(891,70): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(892,69): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(896,74): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(897,75): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(898,75): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(899,75): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(900,62): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(901,75): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(902,62): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(903,63): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(904,75): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(905,75): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(906,63): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(907,103): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(910,74): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(911,103): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(914,74): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(915,103): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(918,74): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(919,75): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(920,33): warning C4244: “=”: 从“LONGLONG”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(922,103): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(930,61): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(939,63): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(943,64): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(944,66): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(945,67): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(957,56): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=LONGLONG
+                 ]
+         CTaskThread.cpp
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(2720,21): warning C4244: “初始化”: 从“LONGLONG”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(2724,30): warning C4244: “=”: 从“LONGLONG”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(2761,20): warning C4244: “初始化”: 从“LONGLONG”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(2764,29): warning C4244: “=”: 从“LONGLONG”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(2779,20): warning C4244: “初始化”: 从“LONGLONG”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(2782,29): warning C4244: “=”: 从“LONGLONG”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(2785,29): warning C4244: “=”: 从“LONGLONG”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(3501,53): warning C4244: “=”: 从“LONGLONG”转换到“_Ty”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+                 with
+                 [
+                     _Ty=DWORD
+                 ]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(4170,20): warning C4244: “初始化”: 从“LONGLONG”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(4173,21): warning C4244: “初始化”: 从“LONGLONG”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(4176,21): warning C4244: “初始化”: 从“LONGLONG”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         DCM.cpp
+         DCMDlg.cpp
+         正在生成代码...
+     2>D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(1790): warning C4715: “CTaskThread::wOpenMan”: 不是所有的控件路径都返回值 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+       ResourceCompile:
+         所有输出均为最新。
+         所有输出均为最新。
+       Link:
+         C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.35.32215\bin\HostX86\x86\link.exe /ERRORREPORT:QUEUE /OUT:"D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\Debug\DCM.exe" /INCREMENTAL /ILK:"D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\DCM.ilk" /NOLOGO /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /manifestinput:"C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\14.35.32215\Include\Manifest\dpiaware.manifest" /DEBUG:FULL /PDB:"D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\Debug\DCM.pdb" /SUBSYSTEM:WINDOWS /TLBID:1 /ENTRY:"wWinMainCRTStartup" /DYNAMICBASE /NXCOMPAT /IMPLIB:"D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\Debug\DCM.lib" /MACHINE:X86 "D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\DCM.res"
+         "D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\WindowTools.res"
+         "D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\AppConfig.obj"
+         "D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\CWndManager.obj"
+         "D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\CTaskThread.obj"
+         "D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\CNearby.obj"
+         "D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\CTaskScript.obj"
+         "D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\CTaskHelperScript.obj"
+         "D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\CTaskHelperYan.obj"
+         "D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\CTaskManager.obj"
+         "D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\DCMDlg.obj"
+         "D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\WindowTools.obj"
+         "D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\TlbbLauncher.obj"
+         "D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\TlbbMultiOpenDlg.obj"
+         "D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\CeTableUpdater.obj"
+         "D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\HttpClient.obj"
+         "D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\TeamServerClient.obj"
+         "D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\DCM.obj"
+         "D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\obj.obj"
+         "D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\.build\Debug\pch.obj"
+     2>LINK : fatal error LNK1168: 无法打开 D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\Debug\DCM.exe 进行写入 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+     2>已完成生成项目“D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj”(默认目标)的操作 - 失败。
+     1>已完成生成项目“D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.sln”(Build 个目标)的操作 - 失败。
+
+生成失败。
+
+       “D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.sln”(Build 目标) (1) ->
+       “D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj”(默认目标) (2) ->
+       (ClCompile 目标) -> 
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(885,70): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(886,69): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(887,70): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(888,69): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(889,70): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(890,69): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(891,70): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(892,69): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(896,74): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(897,75): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(898,75): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(899,75): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(900,62): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(901,75): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(902,62): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(903,63): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(904,75): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(905,75): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(906,63): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(907,103): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(910,74): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(911,103): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(914,74): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(915,103): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(918,74): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(919,75): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(920,33): warning C4244: “=”: 从“LONGLONG”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(922,103): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(930,61): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(939,63): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(943,64): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(944,66): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(945,67): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskScript.cpp(957,56): warning C4244: “=”: 从“_Ty”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(2720,21): warning C4244: “初始化”: 从“LONGLONG”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(2724,30): warning C4244: “=”: 从“LONGLONG”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(2761,20): warning C4244: “初始化”: 从“LONGLONG”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(2764,29): warning C4244: “=”: 从“LONGLONG”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(2779,20): warning C4244: “初始化”: 从“LONGLONG”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(2782,29): warning C4244: “=”: 从“LONGLONG”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(2785,29): warning C4244: “=”: 从“LONGLONG”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(3501,53): warning C4244: “=”: 从“LONGLONG”转换到“_Ty”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(4170,20): warning C4244: “初始化”: 从“LONGLONG”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(4173,21): warning C4244: “初始化”: 从“LONGLONG”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(4176,21): warning C4244: “初始化”: 从“LONGLONG”转换到“DWORD”，可能丢失数据 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+         D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\CTaskThread.cpp(1790): warning C4715: “CTaskThread::wOpenMan”: 不是所有的控件路径都返回值 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+
+
+       “D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.sln”(Build 目标) (1) ->
+       “D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj”(默认目标) (2) ->
+       (Link 目标) -> 
+         LINK : fatal error LNK1168: 无法打开 D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\Debug\DCM.exe 进行写入 [D:\BaiduNetdiskDownload\大聪明0基础系列教程\第二章 实现自己的开发框架\DCM_18\DCM_CX555\DCM.vcxproj]
+
+    46 个警告
+    1 个错误
+
+已用时间 00:00:04.95

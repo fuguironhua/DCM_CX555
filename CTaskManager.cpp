@@ -6,11 +6,12 @@ CWindowRuntime::CWindowRuntime(std::shared_ptr<tagWndInfo> wnd, const tagWndIni&
     : m_memory(std::make_shared<TaskMemoryState>()),
       m_control(std::make_shared<CThreadControl>()),
       m_wnd(std::move(wnd)),
-      m_ini(ini) {
+      m_ini(ini),
+      m_schedule(schedule ? std::move(schedule) : std::make_shared<CTaskSchedule>()) {
     m_info.id = m_wnd ? m_wnd->id : 0;
     m_info.wnd = m_wnd;
     m_task = std::make_unique<CTaskScript>(m_wnd, m_control, m_ini, logWindow,
-                                           std::move(schedule), m_memory);
+                                           m_schedule, m_memory);
     m_helper = std::make_unique<CTaskHelperScript>(m_wnd, m_control, m_ini,
                                                    logWindow, m_memory);
     m_yan = std::make_unique<CTaskHelperYan>(m_wnd, m_control, m_ini,
@@ -40,9 +41,31 @@ void CWindowRuntime::Stop() {
 void CWindowRuntime::Suspend() { m_control->Pause(); m_info.state = _T("paused (3 threads)"); }
 void CWindowRuntime::Resume() { m_control->Resume(); m_info.state = _T("running (3 threads)"); }
 void CWindowRuntime::RequestTest() { if (m_task && IsRunning()) m_task->RequestTest(); }
+void CWindowRuntime::RequestRoute(bool reverse) { if (m_task && IsRunning()) m_task->RequestRoute(reverse); }
+void CWindowRuntime::StartSequence(const std::vector<int>& taskIds) {
+    if (m_schedule) m_schedule->Start(taskIds);
+}
+void CWindowRuntime::StopSequence() {
+    if (m_schedule) m_schedule->Stop();
+}
+bool CWindowRuntime::IsSequenceRunning() const {
+    return m_schedule && m_schedule->IsRunning();
+}
+CString CWindowRuntime::Status() const {
+    if (!IsRunning()) return _T("stopped");
+    if (IsPaused()) return _T("paused (3)");
+    const CString task = m_task ? m_task->CurrentTaskName() : CString();
+    if (task.IsEmpty()) return _T("running (3)");
+    CString status;
+    status.Format(_T("running: %s"), task.GetString());
+    return status;
+}
+size_t CWindowRuntime::CompletedTaskCount() const {
+    return m_task ? m_task->CompletedTaskCount() : 0;
+}
 bool CWindowRuntime::IsRunning() const { return m_task && m_helper && m_yan && (m_task->IsRunning() || m_helper->IsRunning() || m_yan->IsRunning()); }
 CTaskManager::CTaskManager(const CAppConfig& config, HWND logWindow, TaskSchedulePtr schedule)
-    : m_ini(config.Window()), m_logWindow(logWindow), m_schedule(schedule ? std::move(schedule) : std::make_shared<CTaskSchedule>()) {}
+    : m_ini(config.Window()), m_logWindow(logWindow) { (void)schedule; }
 CTaskManager::~CTaskManager() { Stop(); }
 bool CTaskManager::Start(const std::vector<std::shared_ptr<tagWndInfo>>& windows) {
     bool allOk = true; std::scoped_lock lock(m_mutex);
@@ -50,7 +73,7 @@ bool CTaskManager::Start(const std::vector<std::shared_ptr<tagWndInfo>>& windows
         if (!wnd || !CWndManager::IsAlive(wnd->hWnd)) continue;
         auto it = m_runtimes.find(wnd->hWnd);
         if (it == m_runtimes.end()) {
-            auto runtime = std::make_unique<CWindowRuntime>(wnd, m_ini, m_logWindow, m_schedule);
+            auto runtime = std::make_unique<CWindowRuntime>(wnd, m_ini, m_logWindow);
             if (!runtime->Start()) { allOk = false; continue; }
             m_runtimes.emplace(wnd->hWnd, std::move(runtime));
         } else if (!it->second->IsRunning()) {
@@ -77,6 +100,46 @@ size_t CTaskManager::RequestTest(const std::vector<HWND>& windows) {
     }
     return requested;
 }
+size_t CTaskManager::RequestRoute(bool reverse, const std::vector<HWND>& windows) {
+    std::scoped_lock lock(m_mutex);
+    size_t requested = 0;
+    for (auto& [hwnd, runtime] : m_runtimes) {
+        if (Applies(hwnd, windows) && runtime->IsRunning()) {
+            runtime->RequestRoute(reverse);
+            ++requested;
+        }
+    }
+    return requested;
+}
+void CTaskManager::StartSequence(const std::vector<int>& taskIds, const std::vector<HWND>& windows) {
+    std::scoped_lock lock(m_mutex);
+    for (auto& [hwnd, runtime] : m_runtimes)
+        if (Applies(hwnd, windows) && runtime->IsRunning()) runtime->StartSequence(taskIds);
+}
+void CTaskManager::StopSequence(const std::vector<HWND>& windows) {
+    std::scoped_lock lock(m_mutex);
+    for (auto& [hwnd, runtime] : m_runtimes)
+        if (Applies(hwnd, windows)) runtime->StopSequence();
+}
+bool CTaskManager::IsSequenceRunning(const std::vector<HWND>& windows) const {
+    std::scoped_lock lock(m_mutex);
+    for (const auto& [hwnd, runtime] : m_runtimes)
+        if (Applies(hwnd, windows) && runtime->IsSequenceRunning()) return true;
+    return false;
+}
 bool CTaskManager::IsRunning(HWND hwnd) const { std::scoped_lock lock(m_mutex); const auto it = m_runtimes.find(hwnd); return it != m_runtimes.end() && it->second->IsRunning(); }
 bool CTaskManager::IsPaused(HWND hwnd) const { std::scoped_lock lock(m_mutex); const auto it = m_runtimes.find(hwnd); return it != m_runtimes.end() && it->second->IsPaused(); }
+CString CTaskManager::Status(HWND hwnd) const { std::scoped_lock lock(m_mutex); const auto it = m_runtimes.find(hwnd); return it != m_runtimes.end() ? it->second->Status() : CString(_T("stopped")); }
+size_t CTaskManager::CompletedTaskCount(const std::vector<HWND>& windows) const {
+    std::scoped_lock lock(m_mutex);
+    size_t minimum = (std::numeric_limits<size_t>::max)();
+    bool found = false;
+    for (const auto& [hwnd, runtime] : m_runtimes) {
+        if (Applies(hwnd, windows)) {
+            minimum = (std::min)(minimum, runtime->CompletedTaskCount());
+            found = true;
+        }
+    }
+    return found ? minimum : 0;
+}
 size_t CTaskManager::RunningCount() const { std::scoped_lock lock(m_mutex); size_t count = 0; for (const auto& [hwnd, runtime] : m_runtimes) if (runtime->IsRunning()) ++count; return count; }

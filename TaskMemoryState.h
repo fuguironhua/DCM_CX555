@@ -38,6 +38,9 @@ enum Fruit15 : size_t {
     PaoShang_ItemInfo3_Price,
     ZhouHuoYue_Condition_Text,
     MiniMap_Placename,
+    Quest_Frame,
+    QuitRelative_Frame_Back,
+    Chat_Frame,
     Fruit15Count
 };
 
@@ -52,7 +55,7 @@ struct TaskMemoryState {
         Gdebug, Hzt, Hzt2, Hztcc, Luadost, Paos, Shic, Nbsq, HHKK3PM, HHKK3P2, Wsasend,
         KuaTuX, ShicH, SaoD, HuoYe, jYcdiz, jcYcdi, Memccp, Hkwordd, Xguih, BagJH, BagJH2,
         Renms, Renmcall, Hksendd, Hkattjc, Bufqx, tlsj, psfx, sddd, bagbd, bagjd, sjjs,
-        sjdqz, fbdz,zqpd , SceneManagerGlobal, SceneManagerCache, AddressSlotCount = 100
+        sjdqz, fbdz,zqpd , SceneManagerGlobal, SceneManagerCache, CWorldManager, AddressSlotCount = 100
     };
 
     enum ExpressionSlot : size_t {
@@ -91,6 +94,8 @@ struct TaskMemoryState {
         dztsj = 72,
         dzbsj = 73,
         drwzt = 74,
+        fbys = 75,
+        dxnjc = 76,
         MamsSlotCount = 100
     };
 
@@ -108,9 +113,15 @@ struct TaskMemoryState {
     bool modulesReady = false;
     bool referenceWindowSize = false;
     bool initialized = false;
+    std::mutex packetMutex;
+    DWORD lastPacketTick = 0;
+    bool hasPacketTick = false;
+    CString lastPacketAction;
+    // Reference wPet_Chu cooldown, shared by the worker threads of this window.
+    DWORD lastPetActionTick = 0;
 
     void BeginInitialization() {
-        std::scoped_lock lock(readyMutex);
+        std::scoped_lock lock(readyMutex, packetMutex);
         addresses.fill(0);
         expressions = {};
         windowAddresses.fill(0);
@@ -125,6 +136,10 @@ struct TaskMemoryState {
         modulesReady = false;
         referenceWindowSize = false;
         initialized = false;
+        lastPacketTick = 0;
+        hasPacketTick = false;
+        lastPacketAction.Empty();
+        lastPetActionTick = 0;
     }
 
     void FinishInitialization(bool success) {
@@ -161,7 +176,7 @@ using TaskMemoryStatePtr = std::shared_ptr<TaskMemoryState>;
 #define DKSAOD _T("setmetatable(_G, {__index = PlayerQuicklyEnter_Env});PlayerQuicklyEnter_Clicked(1);")
 #define GBSAOD _T("setmetatable(_G, {__index = SweepAll_Env});SweepAll_OnClosed();")
 #define KGZDZD _T("setmetatable(_G, { __index = MiniMap_Env }); MiniMap_ZDZD();")
-#define XUNLQR _T("setmetatable(_G, { __index = MessageBox_Self_Env }); MessageBox_Self_OK_Clicked();")
+#define XUNLQR _T("setmetatable(_G, {__index = MessageBox_Self_Env});MessageBox_Self_OK_Clicked();")
 #define XUNLQR2 _T("setmetatable(_G, {__index = AcceptBox_Env}); AcceptBox_OK_Clicked();")
 #define FUBHIL _T("setmetatable(_G, {__index = Higntlight_Env}); Higntlight_OnClose();")
 #define CHTABL _T("setmetatable(_G, {__index = Packet_Env}); Packet_ChangeTabIndex(1);")

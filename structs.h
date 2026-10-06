@@ -44,6 +44,13 @@ struct BagItem {
     DWORD diz = 0;
 };
 
+// Destination decoded from a map/treasure scroll tooltip.
+struct ZuoBi {
+    int ID = -1;
+    float x = 0.0f;
+    float y = 0.0f;
+};
+
 struct PaoShangRecommendData {
     DWORD price = 0;
     DWORD id = 0;

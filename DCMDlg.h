@@ -4,6 +4,8 @@
 #include "AppConfig.h"
 #include "CTaskManager.h"
 #include "CWndManager.h"
+#include "CeTableUpdater.h"
+#include "WindowTools.h"
 
 class CDCMDlg final : public CDialogEx {
 public:
@@ -38,6 +40,19 @@ private:
     afx_msg void OnStart();
     afx_msg void OnPause();
     afx_msg void OnTest();
+    afx_msg void OnUpdateD();
+    afx_msg void OnMultiOpen();
+    afx_msg void OnCapture();
+    afx_msg void OnPauseVerify();
+    afx_msg void OnDistance();
+    afx_msg void OnGrabVerify();
+    afx_msg void OnDetectCaptchaType();
+    void DetectCaptchaType();
+    afx_msg void OnRunRouteForward();
+    afx_msg void OnRunRouteReverse();
+    void RequestRouteRun(bool reverse);
+    bool EnsureWindowToolsDm();
+    afx_msg LRESULT OnUpdateDFinished(WPARAM wParam, LPARAM lParam);
     afx_msg void OnContextMenu(CWnd* wnd, CPoint point);
     afx_msg void OnDebugSave();
     afx_msg void OnDebugClear();
@@ -48,6 +63,7 @@ private:
     afx_msg void OnTaskToggle();
     afx_msg LRESULT OnDmRegistrationMessage(WPARAM wParam, LPARAM lParam);
     afx_msg LRESULT OnWindowThreadLog(WPARAM wParam, LPARAM lParam);
+    afx_msg LRESULT OnGrabVerifyFinished(WPARAM wParam, LPARAM lParam);
     CListCtrl m_list;
     CListCtrl m_taskList;
     CListCtrl m_taskRunList;
@@ -56,6 +72,20 @@ private:
     CButton m_pause;
     CButton m_taskToggle;
     CButton m_test;
+    CButton m_updateD;
+    CButton m_multiOpen;
+    CButton m_capture;
+    CButton m_pauseVerify;
+    CButton m_distance;
+    CButton m_grabVerify;
+    CButton m_detectType;
+    CButton m_routeForward;
+    CButton m_routeReverse;
+    std::unique_ptr<dmsoft> m_windowToolsDm;
+    CVerifyProcessPause m_verifyPause;
+    std::atomic<bool> m_grabRunning{ false };
+    std::thread m_updateDThread;
+    CeTableUpdater::Result m_updateDResult;
     CStatic m_status;
     CRichEditCtrl m_debug;
     CFont m_debugFont;
@@ -70,5 +100,7 @@ private:
     std::atomic<bool> m_dmInitDone{ false };
     std::atomic<bool> m_dmRegistered{ false };
     std::vector<std::shared_ptr<tagWndInfo>> m_windows;
+    bool m_taskSequenceStarted = false;
+    size_t m_taskRowsRemoved = 0;
 };
 

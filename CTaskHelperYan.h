@@ -11,6 +11,9 @@ public:
 
 protected:
     LPCTSTR ThreadName() const override { return _T("HelperYan"); }
-    bool OnEventThreadStart() override { return WaitForMemoryReady(); }
+    bool OnEventThreadStart() override {
+        const bool ready = WaitForMemoryReady();
+        return ready;
+    }
     bool OnLoop() override;
 };

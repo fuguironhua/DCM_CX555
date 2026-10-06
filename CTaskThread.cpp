@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "CTaskThread.h"
 #include "CWndManager.h"
 #include <cmath>
@@ -10,6 +10,8 @@
 #include <mutex>
 #include <cwctype>
 #include <regex>
+#include <random>
+#include <cstdlib>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -36,6 +38,33 @@ constexpr DWORD kCeguiTreeNameCapacityOffset = 0x24;
 constexpr DWORD kCeguiTreeWindowOffset = 0x28;
 constexpr DWORD kCeguiMaxNameLength = 0x400;
 constexpr size_t kCeguiMaxVisitedNodes = 128;
+
+// 聊天历史控件 FalagardChatHistory：容器(名字树查找) +0x3C 指向控件，
+// 控件 +0x2F0 是 std::list 哨兵，链表保存全部频道的消息行(与页签无关)，
+// 节点 +0x08 是行窗口；行窗口 +0x60/+0x64 是文本 token 数/数组。
+constexpr DWORD kChatHistoryWidgetOffset = 0x3C;
+constexpr DWORD kChatHistoryListOffset = 0x2F0;
+constexpr DWORD kChatHistoryNodeValueOffset = 0x08;
+constexpr size_t kChatHistoryProbeItems = 24;      // 倒查深度（通常前几行就中）
+constexpr DWORD kChatHistoryPollInterval = 1500;   // 节流间隔(ms)：窗口内调用零开销
+constexpr DWORD kCeguiTextCountOffset = 0x60;
+constexpr DWORD kCeguiTextArrayOffset = 0x64;
+constexpr DWORD kChatTeamToken = 0x961F;   // '队'
+
+// 收包日志：网络对象(虚表 = Game.exe+0x691C9C, 2026-09-19 实测) +0x38 是
+// 接收流环形缓冲 {data, cap, readpos, writepos, ...}，最近收到的聊天包
+// 以明文记录在环形缓冲里；队伍聊天包格式（实测）：
+//   6E 02 | 总长(2) | 00 | 序号 | 渠道(=1 队伍) | 内容长度 |
+//   00 00 00 | 内容(GBK) | 名字长度 | 发送者(GBK) | 尾
+constexpr DWORD kNetObjectVtableRva = 0x691C9C;
+constexpr DWORD kNetRingDataOffset = 0x40;
+constexpr DWORD kNetRingCapacityOffset = 0x44;
+constexpr DWORD kNetRingWritePosOffset = 0x4C;
+constexpr DWORD kChatPacketMark = 0x026E;
+constexpr DWORD kChatPacketTeamChannel = 0x01;
+constexpr DWORD kChatPacketContentOffset = 0x0B;   // 包内容起始偏移(11字节包头)
+constexpr size_t kChatPacketSearchBytes = 0x1000;
+constexpr size_t kChatPacketNameMaxBytes = 0x40;
 
 // Active character states are held in a std::_Tree reached through the first
 // global below.  The second global owns the sorted state-definition array.
@@ -70,6 +99,15 @@ constexpr DWORD kStateObjectDescriptionOffset = 0x40;
 // CObject_PlayerOther cache is stored at object-manager + 0x48.
 constexpr DWORD kObjectManagerGlobalRva = 0x007C5AF0;
 constexpr DWORD kObjectManagerTargetOffset = 0x48;
+
+// Player orientation chain: [[Game.exe+0x7C5AE8]+0x64]+0x4C.
+// The same Actor stores ground coordinates at +0x3C (X) and +0x44 (Z).
+// 旧版朝向全局；2026-09 客户端更新后该处读 0，改为从 jz[ROLEB] 取管理器（见 ResolvePlayerActor）。
+constexpr DWORD kPlayerOrientationGlobalRva = 0x007C5AE8;
+constexpr DWORD kPlayerOrientationActorOffset = 0x64;
+constexpr DWORD kPlayerActorXOffset = 0x3C;
+constexpr DWORD kPlayerActorZOffset = 0x44;
+constexpr DWORD kPlayerActorYawOffset = 0x4C;
 constexpr DWORD kObjectManagerTreeOffset = 0x50;
 constexpr DWORD kObjectManagerNodeKeyOffset = 0x10;
 constexpr DWORD kObjectManagerNodeValueOffset = 0x14;
@@ -84,7 +122,7 @@ constexpr DWORD kPetSkillSlotCount = 13;
 // SkillTemplate_V1: 696=血祭, 697=高级血祭.
 constexpr DWORD kPetXueJiSkillId = 696;
 constexpr DWORD kPetGaoJiXueJiSkillId = 697;
-constexpr DWORD kPetOutStatusOffset = 0x2A00;   // cwcz1
+constexpr DWORD kPetOutStatusOffset = 0x2A04;   // cwcz1
 constexpr DWORD kPetSoulOffset = kPetOutStatusOffset - 380;
 
 constexpr DWORD kMinimumUserAddress = 0x10000;
@@ -527,10 +565,8 @@ constexpr DWORD kMissionIdOffset = 0x09;
 constexpr DWORD kPaoShangZijinOffset = 0x0E;
 constexpr int kMissionRecordCount = 20;
 
-// Guild-rank data used by the client-side title switch at Game.exe+DCA002:
-// [Game.exe+0x7C6034] yields the player-data object, whose +0x61B90 byte is
-// the raw rank value (2..9: member, elite, merchant, ... guild master).
-constexpr DWORD kGuildPlayerGlobalRva = 0x007C7034;
+// BagJ resolves the player-data slot through BAGBP. The object's +0x61B90
+// byte is the raw guild rank (2..9: member, elite, merchant, ... guild master).
 constexpr DWORD kGuildRankOffset = 0x61B90;
 
 struct KjdaEntry {
@@ -742,6 +778,77 @@ CString KjdaCsvPath() {
     return candidates.empty() ? CString() : candidates.front();
 }
 
+// 未匹配到答案的题目收集到主 CSV 同目录的 kjda_unmatched.csv，
+// 便于事后补答案（UTF-8 带 BOM，Excel 可直接打开）。
+CString KjdaUnmatchedPath() {
+    const CString main = KjdaCsvPath();
+    const int slash = main.ReverseFind(_T('\\'));
+    if (slash < 0) return CString(_T("kjda_unmatched.csv"));
+    return main.Left(slash + 1) + _T("kjda_unmatched.csv");
+}
+
+std::string KjdaWideToUtf8(const std::wstring& value) {
+    if (value.empty()) return {};
+    const int length = ::WideCharToMultiByte(
+        CP_UTF8, 0, value.data(), static_cast<int>(value.size()),
+        nullptr, 0, nullptr, nullptr);
+    if (length <= 0) return {};
+    std::string result(static_cast<size_t>(length), '\0');
+    ::WideCharToMultiByte(
+        CP_UTF8, 0, value.data(), static_cast<int>(value.size()),
+        result.data(), length, nullptr, nullptr);
+    return result;
+}
+
+void KjdaAppendUnmatched(const CString& question) {
+    if (question.IsEmpty()) return;
+    const CString path = KjdaUnmatchedPath();
+    if (path.IsEmpty()) return;
+
+    const std::wstring wide(question.GetString(),
+                            static_cast<size_t>(question.GetLength()));
+
+    // 查重：文件里已有同一题目就不再追加。
+    {
+        std::ifstream input(std::filesystem::path(path.GetString()),
+                            std::ios::binary);
+        if (input) {
+            std::string data((std::istreambuf_iterator<char>(input)),
+                             std::istreambuf_iterator<char>());
+            std::wstring text = KjdaUtf8ToWide(data);
+            if (!text.empty() && text[0] == 0xFEFF) text.erase(0, 1);
+            if (text.find(wide) != std::wstring::npos) return;
+        }
+    }
+
+    const bool created = ::GetFileAttributesW(path.GetString()) ==
+                         INVALID_FILE_ATTRIBUTES;
+    FILE* file = nullptr;
+    if (::_wfopen_s(&file, path.GetString(), L"ab") != 0 || file == nullptr) {
+        return;
+    }
+    if (created) {
+        ::fwrite("\xEF\xBB\xBF", 1, 3, file);
+        ::fputs("question,answer\r\n", file);
+    }
+
+    // 题目含半角逗号或引号时加引号转义，保持 CSV 可解析。
+    std::string utf8 = KjdaWideToUtf8(wide);
+    if (utf8.find(',') != std::string::npos ||
+        utf8.find('"') != std::string::npos) {
+        std::string escaped = "\"";
+        for (const char c : utf8) {
+            if (c == '"') escaped += "\"\"";
+            else escaped += c;
+        }
+        escaped += '"';
+        utf8.swap(escaped);
+    }
+    ::fwrite(utf8.data(), 1, utf8.size(), file);
+    ::fputs(",\r\n", file);
+    ::fclose(file);
+}
+
 const std::vector<KjdaEntry>& KjdaEntries() {
     static std::once_flag loadOnce;
     static std::vector<KjdaEntry> entries;
@@ -870,6 +977,114 @@ void CTaskThread::EmitDebugLog(const CString& text) {
         if (!::PostMessage(m_logWindow, WM_APP_WINDOW_THREAD_LOG, 0, reinterpret_cast<LPARAM>(pending))) {
             delete pending;
         }
+    }
+}
+
+CTaskThread::ScopedActionStatuses::ScopedActionStatuses(
+    CTaskThread& owner, std::vector<DWORD> moveIds,
+    std::vector<DWORD> skillIds, bool onlyIfUnset)
+    : m_owner(owner), m_moveIds(owner.vecrun), m_skillIds(owner.vecskill),
+      m_configured(owner.m_actionStatusesConfigured) {
+    // 通用打怪函数只补默认值，保留外层副本配置（包括显式空列表）。
+    if (!onlyIfUnset || (!m_configured && owner.vecrun.empty() && owner.vecskill.empty())) {
+        owner.vecrun = std::move(moveIds);
+        owner.vecskill = std::move(skillIds);
+        owner.m_actionStatusesConfigured = true;
+    }
+}
+
+CTaskThread::ScopedActionStatuses::~ScopedActionStatuses() {
+    m_owner.vecrun.swap(m_moveIds);
+    m_owner.vecskill.swap(m_skillIds);
+    m_owner.m_actionStatusesConfigured = m_configured;
+}
+
+bool CTaskThread::IsActionAllowed(PacketAction kind) {
+    if (kind == PacketAction::Other) return true;
+    const auto& blocked = kind == PacketAction::Move ? vecrun : vecskill;
+    if (blocked.empty()) return true;
+    if (!m_memory || !Dm() || !m_ready.load()) return false;
+
+    // 与 Read_RWZTC2(0x1111, ...) 相同的自身状态链，使用局部容器，
+    // 避免发包前检查覆盖 nearby 正在使用的 varrou。
+    const DWORD slot = static_cast<DWORD>(jz[TaskMemoryState::ROLEB]);
+    if (!IsPlausibleStatePointer(slot)) return false;
+    const DWORD role = Read_Dw(slot);
+    if (!IsPlausibleStatePointer(role)) return false;
+    const DWORD status = Read_Dw(role + 0x64);
+    if (!IsPlausibleStatePointer(status)) return false;
+    const DWORD head = Read_Dw(status + 0x130);
+    const DWORD count = Read_Dw(status + 0x134);
+    if (!IsPlausibleStatePointer(head) || count > kMaximumStateEntries) return false;
+
+    std::vector<DWORD> values;
+    if (count != 0 && (!CollectStatusTreeValues(Dm(), mmhwnd, head, count, values) ||
+                      values.size() != count)) return false;
+    // 状态树正在更新/切图时稍后重读，避免把不完整快照当成无状态。
+    if (Read_Dw(slot) != role || Read_Dw(role + 0x64) != status ||
+        Read_Dw(status + 0x130) != head || Read_Dw(status + 0x134) != count) return false;
+    return std::none_of(values.begin(), values.end(), [&blocked](DWORD id) {
+        return std::find(blocked.begin(), blocked.end(), id) != blocked.end();
+    });
+}
+
+bool CTaskThread::DispatchPacketWithInterval(
+    const CString& action, const std::function<long()>& writePacket, bool traceSend,
+    PacketAction kind) {
+    if (!m_memory || !m_control || m_control->IsStopping() ||
+        !m_ready.load() || !Dm() || jz[TaskMemoryState::Nbsq] == 0) {
+        if (traceSend) LogD(_T("packet skipped: %s sender not ready"), action.GetString());
+        return false;
+    }
+
+    for (;;) {
+        if (!WaitIfPaused()) return false;
+        if (!IsActionAllowed(kind)) {
+            if (kind == PacketAction::Skill) return false;
+            // 禁走时保留本次目的地；等待期间不持有窗口共用发包锁。
+            SleepEx(100);
+            continue;
+        }
+
+        std::unique_lock<std::mutex> lock(m_memory->packetMutex);
+        if (!WaitIfPaused()) return false;
+
+        const DWORD now = ::GetTickCount();
+        const DWORD elapsed = m_memory->hasPacketTick ? now - m_memory->lastPacketTick : kPacketIntervalMs;
+        if (elapsed < kPacketIntervalMs) {
+            SleepEx(kPacketIntervalMs - elapsed);
+            if (!WaitIfPaused()) return false;
+        }
+
+        const DWORD pendingStart = ::GetTickCount();
+        for (;;) {
+            const LONGLONG movePending = Dm()->ReadIntAddr(
+                mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTB, 4);
+            const LONGLONG commandPending = Dm()->ReadIntAddr(
+                mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 4);
+            if (movePending != 1 && commandPending != 1) break;
+            if (::GetTickCount() - pendingStart >= 2000) {
+                if (traceSend) LogD(_T("packet skipped: %s pending flag timeout"), action.GetString());
+                return false;
+            }
+            SleepEx(50);
+            if (!WaitIfPaused()) return false;
+        }
+
+        // 间隔/上一封包等待期间可能新增控制状态，写入封包前必须复查。
+        if (!IsActionAllowed(kind)) {
+            if (kind == PacketAction::Skill) return false;
+            lock.unlock();
+            SleepEx(100);
+            continue;
+        }
+        if (traceSend) LogD(_T("%s"), action.GetString());
+        const long flagWrite = writePacket();
+        m_memory->lastPacketTick = ::GetTickCount();
+        m_memory->hasPacketTick = true;
+        m_memory->lastPacketAction = action;
+        if (traceSend && flagWrite == 0) LogD(_T("packet flag write failed: %s"), action.GetString());
+        return flagWrite != 0;
     }
 }
 
@@ -1008,6 +1223,270 @@ CString CTaskThread::ReadCeguiText(DWORD window)
         }
     }
     return text;
+}
+
+bool CTaskThread::ReadTeamChatFromWindow(CString& outMessage, CString* outSender)
+{
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd) {
+        return false;
+    }
+
+    // 聊天历史控件维护一份与页签无关的全频道消息行链表；
+    // 队伍消息 = 链表里以「[队伍]」开头的最后一行。
+    const DWORD container = ck[Chat_Frame];
+    if (container == 0) return false;
+
+    const DWORD widget = Read_Dw(container + kChatHistoryWidgetOffset);
+    if (widget == 0) return false;
+
+    const DWORD sentinel = Read_Dw(widget + kChatHistoryListOffset);
+    if (sentinel == 0) return false;
+
+    // 从链表尾部（最新一行）向前倒查；命中的第一条即最新的队伍消息，
+    // 通常只看前几行，调用开销极小，适合在打怪循环里节流调用。
+    DWORD bestWindow = 0;
+    DWORD node = Read_Dw(sentinel + 4);   // 哨兵的 prev = 最新节点
+    for (size_t step = 0; node != 0 && node != sentinel &&
+                           step < kChatHistoryProbeItems; ++step) {
+        const DWORD window = Read_Dw(node + kChatHistoryNodeValueOffset);
+        if (window != 0) {
+            // 先在前 8 个 token 里找「队」预筛，命中再读整行文本。
+            const DWORD tokenCount = Read_Dw(window + kCeguiTextCountOffset);
+            const DWORD tokenAddress = Read_Dw(window + kCeguiTextArrayOffset);
+            if (tokenCount >= 4 && tokenCount < 0x800 && tokenAddress >= 0x10000) {
+                const DWORD probe = (tokenCount < 8) ? tokenCount : 8;
+                for (DWORD index = 0; index < probe; ++index) {
+                    if (Read_Dw(tokenAddress + index * 4) != kChatTeamToken) continue;
+                    const CString text = ReadCeguiText(window);
+                    if (text.Left(4) == _T("[队伍]")) {
+                        bestWindow = window;
+                    }
+                    break;
+                }
+            }
+        }
+        if (bestWindow != 0) break;
+        node = Read_Dw(node + 4);   // prev
+    }
+    if (bestWindow == 0) return false;
+
+    // 取冒号后的内容：全角 U+FF1A 优先，兼容半角。
+    const CString text = ReadCeguiText(bestWindow);
+    int colon = text.Find(static_cast<TCHAR>(0xFF1A));
+    const int halfColon = text.Find(_T(':'));
+    if (colon < 0 || (halfColon >= 0 && halfColon < colon)) {
+        colon = halfColon;
+    }
+    if (colon < 0) return false;
+
+    outMessage = text.Mid(colon + 1);
+    if (outMessage.IsEmpty()) return false;
+
+    if (outSender != nullptr) {
+        // 发送者 = 第二对 [] 里的名字（"[队伍][火咖辣子]：xxx"）。
+        const int open = text.Find(_T('['), 4);
+        const int close = open >= 0 ? text.Find(_T(']'), open + 1) : -1;
+        *outSender = close > open ? text.Mid(open + 1, close - open - 1) : CString();
+    }
+    return true;
+}
+
+// （备用，暂未接入主流程）收包日志环形缓冲读取：队伍消息在包里是明文，
+// 但实测耗时且偶有误差，先保留代码备查，主流程仍用显示列表读法。
+bool CTaskThread::ReadLastTeamFromPacketRing(CString& outMessage, CString* outSender)
+{
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd) {
+        return false;
+    }
+
+    if (m_netObject == 0) {
+        if (m_netObjectTick != 0 && GetTickCount() - m_netObjectTick < 5000) {
+            return false;   // 失败冷却，避免频繁全内存扫描
+        }
+        m_netObject = FindNetPacketObject();
+        m_netObjectTick = GetTickCount();
+        if (m_netObject == 0) return false;
+    }
+
+    const DWORD data = Read_Dw(m_netObject + kNetRingDataOffset);
+    const DWORD capacity = Read_Dw(m_netObject + kNetRingCapacityOffset);
+    const DWORD position = Read_Dw(m_netObject + kNetRingWritePosOffset);
+    if (data < 0x10000 || capacity < 0x1000 || position > capacity) {
+        m_netObject = 0;   // 对象失效，下次重找
+        return false;
+    }
+
+    const size_t window = (kChatPacketSearchBytes < capacity)
+        ? kChatPacketSearchBytes : static_cast<size_t>(capacity);
+    const DWORD begin = (position >= window) ? position - static_cast<DWORD>(window)
+                                             : capacity - (static_cast<DWORD>(window) - position);
+    std::vector<unsigned char> buffer(window);
+    if (begin + window <= capacity) {
+        if (!ReadGameMemory(data + begin, buffer.data(), window)) return false;
+    } else {
+        const size_t first = capacity - begin;
+        if (!ReadGameMemory(data + begin, buffer.data(), first)) return false;
+        if (!ReadGameMemory(data, buffer.data() + first, window - first)) return false;
+    }
+
+    // 从窗口尾部向前找最后一个合法的队伍聊天包。
+    for (size_t k = 0; k + 8 < window; ++k) {
+        const size_t i = window - 4 - k;
+        if (*reinterpret_cast<const WORD*>(&buffer[i]) != kChatPacketMark) continue;
+        const BYTE channel = buffer[i + 6];
+        const BYTE contentLength = buffer[i + 7];
+        if (channel != kChatPacketTeamChannel) continue;
+        if (contentLength == 0 || contentLength > 0x200) continue;
+        const size_t nameLengthPos = i + kChatPacketContentOffset + contentLength;
+        if (nameLengthPos + 1 > window) continue;
+        const BYTE nameLength = buffer[nameLengthPos];
+        if (nameLength == 0 || nameLength > kChatPacketNameMaxBytes) continue;
+        if (nameLengthPos + 1 + nameLength > window) continue;
+
+        const auto toWide = [](const unsigned char* bytes, size_t length) -> CString {
+            if (length == 0) return CString();
+            const int chars = ::MultiByteToWideChar(936, 0,
+                reinterpret_cast<const char*>(bytes), static_cast<int>(length), nullptr, 0);
+            if (chars <= 0) return CString();
+            CString text;
+            ::MultiByteToWideChar(936, 0, reinterpret_cast<const char*>(bytes),
+                static_cast<int>(length), text.GetBuffer(chars), chars);
+            text.ReleaseBuffer(chars);
+            return text;
+        };
+
+        outMessage = toWide(&buffer[i + kChatPacketContentOffset], contentLength);
+        if (outMessage.IsEmpty()) continue;
+        if (outSender != nullptr) {
+            *outSender = toWide(&buffer[nameLengthPos + 1], nameLength);
+        }
+        return true;
+    }
+    return false;
+}
+
+HANDLE CTaskThread::EnsureGameProcess()
+{
+    DWORD pid = 0;
+    ::GetWindowThreadProcessId(m_wnd->hWnd, &pid);
+    if (pid == 0) return nullptr;
+    if (m_gameProcess != nullptr && m_gameProcessPid != pid) {
+        ::CloseHandle(m_gameProcess);
+        m_gameProcess = nullptr;
+    }
+    if (m_gameProcess == nullptr) {
+        m_gameProcess = ::OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION,
+                                      FALSE, pid);
+        if (m_gameProcess != nullptr) {
+            m_gameProcessPid = pid;
+        }
+    }
+    return m_gameProcess;
+}
+
+bool CTaskThread::ReadGameMemory(DWORD address, void* buffer, size_t size)
+{
+    HANDLE process = EnsureGameProcess();
+    if (process == nullptr || buffer == nullptr || size == 0) return false;
+    SIZE_T read = 0;
+    return ::ReadProcessMemory(process, reinterpret_cast<LPCVOID>(address),
+                               buffer, size, &read) && read == size;
+}
+
+// 扫描进程内存找收包网络对象（校验环形缓冲字段），结果缓存。
+DWORD CTaskThread::FindNetPacketObject()
+{
+    const long targetHwnd = static_cast<long>(reinterpret_cast<INT_PTR>(m_wnd->hWnd));
+    const DWORD vtable = static_cast<DWORD>(
+        m_dm->GetModuleBaseAddr(targetHwnd, _T("Game.exe"))) +
+        kNetObjectVtableRva;
+    if (vtable == kNetObjectVtableRva) return 0;
+
+    HANDLE process = EnsureGameProcess();
+    if (process == nullptr) return 0;
+
+    MEMORY_BASIC_INFORMATION info{};
+    DWORD address = 0x10000;
+    std::vector<unsigned char> buffer(0x100000);
+    while (address < 0x7FFF0000) {
+        if (!::VirtualQueryEx(process, reinterpret_cast<LPCVOID>(address),
+                              &info, sizeof(info))) {
+            break;
+        }
+        const DWORD base = static_cast<DWORD>(reinterpret_cast<INT_PTR>(info.BaseAddress));
+        const size_t size = info.RegionSize;
+        const DWORD protect = info.Protect & 0xFF;
+        const bool readable = info.State == MEM_COMMIT &&
+                              protect != PAGE_NOACCESS &&
+                              (info.Protect & PAGE_GUARD) == 0;
+        if (readable && size >= 0x1000 && size <= 0x4000000) {
+            for (size_t offset = 0; offset + 4 <= size; ) {
+                const size_t want = ((size - offset) < buffer.size())
+                    ? (size - offset) : buffer.size();
+                SIZE_T read = 0;
+                if (!::ReadProcessMemory(process,
+                        reinterpret_cast<LPCVOID>(base + offset),
+                        buffer.data(), want, &read) || read < 4) {
+                    break;
+                }
+                for (size_t i = 0; i + 4 <= read; i += 4) {
+                    if (*reinterpret_cast<const DWORD*>(&buffer[i]) != vtable) continue;
+                    const DWORD candidate = base + static_cast<DWORD>(offset + i);
+                    if (Read_Dw(candidate + kNetRingCapacityOffset) == 0x100000 &&
+                        Read_Dw(candidate + kNetRingDataOffset) >= 0x10000 &&
+                        Read_Dw(candidate + kNetRingDataOffset) < 0x80000000) {
+                        return candidate;
+                    }
+                }
+                offset += read;
+            }
+        }
+        address = base + static_cast<DWORD>(size);
+    }
+    return 0;
+}
+
+bool CTaskThread::ReadLastTeamChat(CString& outMessage, CString* outSender)
+{
+    // 缓存自管理：节流窗口内直接返回缓存（零内存读取），
+    // 窗口外做一次轻量倒查刷新缓存；打怪循环里可放心调用。
+    const DWORD now = GetTickCount();
+    if (m_lastTeamChatPollTick == 0 ||
+        now - m_lastTeamChatPollTick >= kChatHistoryPollInterval) {
+        m_lastTeamChatPollTick = now;
+
+        CString message, sender;
+        if (ReadTeamChatFromWindow(message, &sender)) {
+            if (message != m_lastTeamChatMessage ||
+                sender != m_lastTeamChatSender) {
+                m_lastTeamChatMessage = message;
+                m_lastTeamChatSender = sender;
+                m_lastTeamChatTick = now;
+            }
+        }
+    }
+
+    if (m_lastTeamChatMessage.IsEmpty()) {
+        return false;
+    }
+    outMessage = m_lastTeamChatMessage;
+    if (outSender != nullptr) {
+        *outSender = m_lastTeamChatSender;
+    }
+    return true;
+}
+
+DWORD CTaskThread::GetLastTeamChatTick() const
+{
+    return m_lastTeamChatTick;
+}
+
+void CTaskThread::ResetLastTeamChat()
+{
+    m_lastTeamChatMessage.Empty();
+    m_lastTeamChatSender.Empty();
+    m_lastTeamChatTick = 0;
+    m_lastTeamChatPollTick = 0;
 }
 
 CString CTaskThread::ExtractPaoShangDestination(const CString& text)
@@ -1301,27 +1780,421 @@ void CTaskThread::havetest()
 
 int CTaskThread::wBenTuXuL2(float xx, float yy)
 {
-    Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 480 + 34, xx);
-    Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 480 + 27, yy);
-    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTC, 0, jz[TaskMemoryState::Nbsq] + 480);//标准
+    CString action;
+    action.Format(_T("move x=%.1f y=%.1f"), xx, yy);
+    return DispatchPacketWithInterval(action, [this, xx, yy] {
+        Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 480 + 34, xx);
+        Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 480 + 27, yy);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTC, 0,
+                           jz[TaskMemoryState::Nbsq] + 480);
+        while (Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTB, 0, 1) == 0) SleepEx(20);
 
-    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTB, 0, 1);//标志
+		while (!m_control->IsStopping()) {
+            SleepEx(20);
+			if (Dm()->ReadIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTB, 0) == 0) { break; }			
+		}
+        return 1;
+    }, true, PacketAction::Move) ? 0 : -1;
+}
+
+
+int CTaskThread::wBenTuXuL2_Fast(float xx, float yy)
+{
+    if (!m_control || m_control->IsStopping()) return -1;
+    while (!m_control->IsStopping() && GetTickCount() - Mams[fbys] < 1200) {
+        SleepEx(300);
+    }
+    Mams[fbys] = GetTickCount();
+    if (xx == 0.0f && yy == 0.0f) return -1;
+    return wBenTuXuL2(xx, yy) == 0 ? 1 : -1;
+}
+
+void CTaskThread::wBenTuXuL3z(float xx, float yy)
+{
+    if (!m_control || m_control->IsStopping()) return;
+    int retry = 0;
+    if (xx == 0.0f || yy == 0.0f) return;
+
+    while (!m_control->IsStopping()) {
+        Point2f position{};
+        if (!ReadNearbyPlayerPosition(position)) {
+            SleepEx(500);
+            continue;
+        }
+
+        const float remaining = NearbyDistance(position, Point2f{ xx, yy });
+        if (remaining < 1.0f || Read_GENS() == 1) break;
+
+        if (Read_RWZT() != 2) {
+            wBenTuXuL2(xx, yy);
+            ++retry;
+        }
+
+        if (retry > 3) {
+            break;
+        }
+        SleepEx(500);
+    }
+}
+
+ZuoBi* CTaskThread::Read_Datu()
+{
+    static thread_local ZuoBi result;
+    result = ZuoBi{};
+    if (!m_control || m_control->IsStopping() || !WaitIfPaused() || !Dm()) return &result;
+
+    // The task message window exposes the destination as: map*X*Y.
+    CString expression;
+    expression.Format(_T("[%08lX]+2C"), static_cast<unsigned long>(jz[TaskMemoryState::RenW]));
+    const DWORD textNode = static_cast<DWORD>(Dm()->ReadInt(mmhwnd, expression, 4));
+    if (textNode < kMinimumUserAddress) return &result;
+    const DWORD raw = static_cast<DWORD>(Dm()->ReadDataAddrToBin(mmhwnd, textNode + 43, 80));
+    if (raw < kMinimumUserAddress) return &result;
+
+    std::vector<int> separators;
+    for (int i = 0; i < 80; ++i)
+        if (*reinterpret_cast<const BYTE*>(static_cast<ULONG_PTR>(raw) + i) == 0x2A) separators.push_back(i);
+    if (separators.size() < 3 || separators[0] <= 0 ||
+        separators[1] - separators[0] <= 2 || separators[2] - separators[1] <= 2)
+        return &result;
+
+    const CString map = Dm()->ReadStringAddr(mmhwnd, textNode + 43, 0, separators[0]);
+    CString base = tsg[TaskMemoryState::workdir];
+    if (base.IsEmpty()) base = CString(std::filesystem::current_path().c_str());
+    CString ini = base + _T("/地图配置.txt");
+    if (!std::filesystem::exists(std::filesystem::path(ini.GetString()))) ini = base + _T("/config/地图配置.txt");
+    CString mapNumber = Dm()->ReadIni(_T("配置"), map, ini.GetString());
+    mapNumber.Trim();
+    if (mapNumber.IsEmpty()) return &result; // 缺失配置不能被 _ttoi 误判成地图 0。
+    for (int i = 0; i < mapNumber.GetLength(); ++i)
+        if (mapNumber[i] < _T('0') || mapNumber[i] > _T('9')) return &result;
+    if (mapNumber.GetLength() > 5) return &result;
+    CString sx = Dm()->ReadStringAddr(mmhwnd, textNode + 45 + separators[0], 0, separators[1] - separators[0] - 2);
+    CString sy = Dm()->ReadStringAddr(mmhwnd, textNode + 45 + separators[1], 0, separators[2] - separators[1] - 2);
+    sx.Trim(); sy.Trim();
+    if (sx.IsEmpty() || sy.IsEmpty()) return &result;
+    TCHAR* endX = nullptr;
+    TCHAR* endY = nullptr;
+    const float x = static_cast<float>(_tcstod(sx.GetString(), &endX));
+    const float y = static_cast<float>(_tcstod(sy.GetString(), &endY));
+    if (!endX || !endY || *endX != 0 || *endY != 0 ||
+        !std::isfinite(x) || !std::isfinite(y) || x <= 0 || y <= 0) return &result;
+    result.ID = _ttoi(mapNumber);
+    result.x = x; result.y = y;
+    DebugLog(_T("Read_Datu: map=%s id=%d x=%.2f y=%.2f"), map.GetString(), result.ID, result.x, result.y);
+    return &result;
+}
+
+void CTaskThread::UpdateBag()
+{
+    if (!m_control || m_control->IsStopping() || !WaitIfPaused()) return;
+    if (bag[balsy].xuh == static_cast<DWORD>(-1)) return;
+    bag[balsy].csxuh.Format(_T("%02x"), bag[balsy].xuh);
+    UpdateMP(tsg[TaskMemoryState::shuxbg], 0x400);
+    if (dwls < kMinimumUserAddress) return;
+    const DWORD itemAddress = *reinterpret_cast<const DWORD*>(static_cast<ULONG_PTR>(dwls) + bag[balsy].xuh * 4);
+    if (!UpdateMP(itemAddress, 0x100) || dwls < kMinimumUserAddress) return;
+    bag[balsy].sj1 = *reinterpret_cast<const DWORD*>(static_cast<ULONG_PTR>(dwls) + 0x00);
+    bag[balsy].sj2 = *reinterpret_cast<const DWORD*>(static_cast<ULONG_PTR>(dwls) + 0x04);
+    bag[balsy].sj3 = *reinterpret_cast<const DWORD*>(static_cast<ULONG_PTR>(dwls) + 0x08);
+    bag[balsy].cow1 = bag[balsy].cow2 = 0;
+}
+
+void CTaskThread::wBenTuXuL3f(float xx, float yy)
+{
+    if (!m_control || m_control->IsStopping()) return;
+    LogD(_T("XuL3f: %.1f  %.1f"), xx, yy);
+    int retry = 0;
+    if (xx == 0.0f || yy == 0.0f) return;
+
+    while (!m_control->IsStopping()) {
+        Point2f position{};
+        if (!ReadNearbyPlayerPosition(position)) {
+            SleepEx(500);
+            continue;
+        }
+
+        const float remaining = NearbyDistance(position, Point2f{ xx, yy });
+        if (remaining < 2.0f || Read_GENS() == 1) break;
+
+        if (Read_RWZT() != 2) {
+            std::vector<int> directions{ 0, 1, 2, 3, 4, 5, 6, 7 };
+            std::default_random_engine generator{ std::random_device{}() };
+            std::shuffle(directions.begin(), directions.end(), generator);
+
+            bool moved = false;
+            for (const int direction : directions) {
+                if (wBenTuXuL33(xx, yy, direction) == 1) {
+                    moved = true;
+                    break;
+                }
+            }
+            if (!moved) return;
+            ++retry;
+        }
+
+        if (retry > 3) {
+            LogD(_T("err XuL3f: %.1f  %.1f"), xx, yy);
+            break;
+        }
+        SleepEx(500);
+    }
+    LogD(_T("XuL3f: wb"));
+}
+
+void CTaskThread::wBenTuXuL3fy(float xx, float yy)
+{
+    if (!m_control || m_control->IsStopping()) return;
+    LogD(_T("XuL3fy: %.1f  %.1f"), xx, yy);
+    int retry = 0;
+    if (xx == 0.0f || yy == 0.0f) return;
+
+    const DWORD started = GetTickCount();
+    while (!m_control->IsStopping()) {
+        Point2f position{};
+        if (ReadNearbyPlayerPosition(position) &&
+            NearbyDistance(position, Point2f{ xx, yy }) < 2.0f) {
+            break;
+        }
+
+        if (GetTickCount() - started > 2000) {
+            DebugLog(_T("XuL3fy: verification handler is not mapped in CX555; move attempt ended"));
+            return;
+        }
+
+        if (Read_RWZT() != 2) {
+            if (retry > 0) {
+                SleepEx(500);
+                continue;
+            }
+            wBenTuXuL33(xx, yy, rand() % 8);
+            ++retry;
+        }
+        SleepEx(500);
+    }
+    LogD(_T("XuL3fy: wb"));
+}
+
+int CTaskThread::wBenTuXuL33(float xx, float yy, int fx)
+{
+    const float radius = static_cast<float>((1000 + rand() % 1000) / 1000.0);
+    const float angle = static_cast<float>(((fx * 450) / 10.0 / 180.0) * 3.1415926);
+    const float targetX = xx + radius * static_cast<float>(std::cos(angle));
+    const float targetY = yy + radius * static_cast<float>(std::sin(angle));
+    if (wBenTuXuL2(targetX, targetY) != 0) return -1;
+    SleepEx(500);
+    return 1;
+}
+
+void CTaskThread::wBenTuXuL34(float xx, float yy, int jl, int fx)
+{
+    if (!m_control || m_control->IsStopping()) return;
+    const float radius = static_cast<float>((jl + rand() % 1000) / 1000.0);
+    const float angle = static_cast<float>(((fx * 225) / 10.0 / 180.0) * 3.1415926);
+    const float targetX = xx + radius * static_cast<float>(std::cos(angle));
+    const float targetY = yy + radius * static_cast<float>(std::sin(angle));
+    wBenTuXuL2(targetX, targetY);
+
+    for (int index = 0; index < 10 && !m_control->IsStopping(); ++index) {
+        SleepEx(500);
+        if (Read_RWZT() == 0 || Read_GENS() == 1) break;
+    }
+}
+
+void CTaskThread::wBenTuXuL35(float xx, float yy)
+{
+    if (!m_control || m_control->IsStopping()) return;
+    const float radius = static_cast<float>((rand() % 1000) / 1000.0);
+    const int direction = rand() % 16;
+    const float angle = static_cast<float>(((direction * 225) / 10.0 / 180.0) * 3.1415926);
+    const float targetX = xx + radius * static_cast<float>(std::cos(angle));
+    const float targetY = yy + radius * static_cast<float>(std::sin(angle));
+    wBenTuXuL2_Fast(targetX, targetY);
+}
+
+int CTaskThread::wKuaTuXL(float xx, float yy, int dtid)
+{
+    if (!m_control || m_control->IsStopping()) return -1;
+    while (IsWndGuot() == 1 && !m_control->IsStopping()) SleepEx(1000);
+    if (Read_RWZT() == 9) return -2;
+    if (GetTickCount() - Mams[fbys] < 1000 && !m_control->IsStopping()) {
+        SleepEx(300);
+    }
+    Mams[fbys] = GetTickCount();
+    if (xx == 0.0f && yy == 0.0f) return -1;
+
+    CString action;
+    action.Format(_T("map move target=%d x=%.1f y=%.1f"), dtid, xx, yy);
+    return DispatchPacketWithInterval(action, [this, xx, yy, dtid] {
+        Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 900 + 4, xx);
+        Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 900 + 12, yy);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 900 + 33, 0, dtid);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 900 + 38, 0, Read_DTID());
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTC, 0,
+                           jz[TaskMemoryState::Nbsq] + 900);
+        return Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTB, 0, 1);
+    }, true, PacketAction::Move) ? 1 : -1;
+}
+
+int CTaskThread::wKuaTuXL33(float xx, float yy, int dtid)
+{
+    int commandCount = 0;
+    DWORD lastStateTick = GetTickCount();
+    DWORD currentMap = Read_DTID();
+    Point2f previousPosition{};
+
+    wRideOn(1);
+    while (!m_control->IsStopping()) {
+        if (IsWndOpen2(MessageBox_Self_Frame) == 1) {//还没有判断名字
+            if (IsWndGuot() == 0) mLua_Dostr(XUNLQR);
+            SleepEx(1000 + rand() % 500);
+        }
+        if (IsWndOpen2(AcceptBox_Frame) == 1) {
+            mLua_Dostr(XUNLQR2);
+        }
+        if (IsWndGuot() == 1) {
+            while (IsWndGuot() == 1 && !m_control->IsStopping()) SleepEx(4000);
+            continue;
+        }
+
+        if (Read_DTID() != currentMap) {
+            Point2f position{};
+            if (ReadNearbyPlayerPosition(position)) previousPosition = position;
+            for (int index = 0; index < 20 && !m_control->IsStopping(); ++index) {
+                SleepEx(500);
+                Point2f next{};
+                if (ReadNearbyPlayerPosition(next) &&
+                    (next.x != previousPosition.x || next.y != previousPosition.y)) {
+                    break;
+                }
+            }
+            currentMap = Read_DTID();
+        }
+
+        if (Read_RWZT() != 2) {
+            if (Read_DTID() == dtid) {
+                Point2f position{};
+                if (!ReadNearbyPlayerPosition(position)) {
+                    SleepEx(500);
+                    continue;
+                }
+                if (NearbyDistance(position, Point2f{ xx, yy }) < 2.0f ||
+                    Read_GENS() == 1) {
+                    break;
+                }
+                if (commandCount > 0 && GetTickCount() - lastStateTick < 3000) {
+                    SleepEx(500);
+                    continue;
+                }
+                wBenTuXuL33(xx, yy, rand() % 8);
+            } else {
+                if (commandCount > 0 && GetTickCount() - lastStateTick < 5000) {
+                    SleepEx(500);
+                    continue;
+                }
+                wKuaTuXL(xx, yy, dtid);
+            }
+            SleepEx(1000);
+            ++commandCount;
+        } else {
+            lastStateTick = GetTickCount();
+        }
+        SleepEx(500);
+    }
+    LogD(_T("KuaTuXL33: wb"));
     return 0;
+}
+
+void CTaskThread::wBenTuXuL7(int mos, float xx, float yy, int szq)
+{
+    if (!m_control || m_control->IsStopping()) return;
+
+    Point2f position{};
+    if (!ReadNearbyPlayerPosition(position)) return;
+    if (szq == 1) wRideOn(1);
+    if (NearbyDistance(position, Point2f{ xx, yy }) < 2.0f) return;
+
+    SleepEx(1000);
+    const float radius = static_cast<float>((500 + rand() % 1500) / 1000.0);
+    const float baseAngle = static_cast<float>((rand() % 31415) / 10000.0);
+    const float angle = baseAngle + (mos - 1) * 3.1415926f / 2.0f;
+    wBenTuXuL3z(xx + radius * static_cast<float>(std::cos(angle)),
+                yy + radius * static_cast<float>(std::sin(angle)));
 }
 
 int CTaskThread::wOpenMan(DWORD did)
 {
-    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 530 + 9, 0, did);
-    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0, jz[TaskMemoryState::Nbsq] + 530);
-    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
-    return 0;
+    CString action;
+    action.Format(_T("open npc id=%lu"), static_cast<unsigned long>(did));
+    return DispatchPacketWithInterval(action, [this, did] {
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 530 + 9, 0, did);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0,
+                           jz[TaskMemoryState::Nbsq] + 530);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
+
+		while (!m_control->IsStopping()) {
+			SleepEx(20);
+			if (Dm()->ReadIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0) == 0) { break; }
+		}
+        return 0;
+    }) ? 0 : -1;
+}
+
+int CTaskThread::wOpenMan(CString name)
+{
+	regex txt_reg = NerbCs(20, { 0,0 }, name);
+	int ishul = NerbMonst2(Read_Dw(tsg[TaskMemoryState::ERC]), txt_reg);
+	if (ishul == 0) { LogD(_T("找不到人！")); return 0; }
+
+	aMonst = vMonst[0];
+    wXuanZg2(aMonst.ID); SleepEx(100);
+    wOpenMan(aMonst.ID);
 }
 
 void CTaskThread::wXuanZg(DWORD moid)
 {
-	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 560 + 9, 0, moid);
-	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0, jz[TaskMemoryState::Nbsq] + 560);
-    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
+    CString action;
+    action.Format(_T("select id=%lu"), static_cast<unsigned long>(moid));
+    DispatchPacketWithInterval(action, [this, moid] {
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 560 + 9, 0, moid);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0,
+                           jz[TaskMemoryState::Nbsq] + 560);
+        while (Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1) == 0) SleepEx(20);
+
+		while (!m_control->IsStopping()) {
+            SleepEx(20);
+			if (Dm()->ReadIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0) == 0) {  break; }
+		}
+        return 1;
+    }, true);
+
+}
+
+void CTaskThread::wXuanZg2(DWORD moid)
+{
+    Point2f player{};
+    if (!ReadNearbyPlayerPosition(player)) return;
+
+    if (!UpdateMP(aMonst.Dibu, 0x100) || dwls == 0) return;
+    const DWORD monsterCopy = dwls;
+    const Point2f monster{
+        *reinterpret_cast<float*>(static_cast<ULONG_PTR>(monsterCopy) + 0x54),
+        *reinterpret_cast<float*>(static_cast<ULONG_PTR>(monsterCopy) + 0x5C)
+    };
+    if (monster.x <= 0.0f || monster.y <= 0.0f) return;
+
+    float distance = NearbyDistance(player, monster);
+    if (distance > 40.0f) return;
+
+    if (distance > 20.0f) {
+        const double angle = mGetAngle2(monster, player);
+        const float offset = static_cast<float>((10000 + rand() % 10000) / 1000.0);
+        wBenTuXuL3z(
+            monster.x + static_cast<float>(std::cos(angle)) * offset,
+            monster.y + static_cast<float>(std::sin(angle)) * offset);
+    }
+
+    wXuanZg(moid);
 }
 
 bool CTaskThread::tMoveTo(int x, int y) {
@@ -1503,7 +2376,7 @@ bool CTaskThread::ReadNearbyPlayerPosition(Point2f& position) {
         return false;
     }
 
-    if (!UpdateMP(tsg[TaskMemoryState::Shuxtb], 0x100)) return false;
+    if (!UpdateMP(static_cast<DWORD>(jz[TaskMemoryState::jYcdiz]), 0x100)) return false;
 
     const DWORD playerCopy = dwls;
     return ReadNearbyLocalValue(playerCopy, kNearbyXOffset, position.x) &&
@@ -1534,18 +2407,106 @@ int CTaskThread::IsWndGuot()
     return transitionShown != 0 || avatarData == 0 ? 1 : 0;
 }
 
+
+int CTaskThread::IsWndOpen(int xuh)
+{
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd) return 0;
+    const DWORD windowOpen = static_cast<DWORD>(jz[TaskMemoryState::WndOpen]);
+    if (windowOpen == 0) return 0;
+
+    CString expression;
+    expression.Format(_T("[[[[%08x]+14]+%08x]+30]+9C"),
+                      windowOpen,
+                      static_cast<DWORD>(xuh) - Mams[dxnjc]);
+    return _ttoi(Dm()->ReadData(mmhwnd, expression, 1));
+}
+
+int CTaskThread::IsWndOpen2(DWORD ckdx)
+{
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd) return 0;
+    if (static_cast<size_t>(ckdx) >= Fruit15Count) return 0;
+
+    const DWORD window = static_cast<DWORD>(ck[ckdx]);
+    if (window < kMinimumUserAddress) return 0;
+
+    const long targetHwnd = static_cast<long>(
+        reinterpret_cast<INT_PTR>(m_wnd->hWnd));
+    const BYTE shown = static_cast<BYTE>(m_dm->ReadIntAddr(
+        targetHwnd, static_cast<LONGLONG>(window) + 0xE5, 2));
+    return shown != 0 ? 1 : 0;
+}
+
+bool CTaskThread::ReadServerTime(std::int64_t& unixSeconds)
+{
+    unixSeconds = 0;
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd) return false;
+    const long targetHwnd = static_cast<long>(reinterpret_cast<INT_PTR>(m_wnd->hWnd));
+    const DWORD game = static_cast<DWORD>(m_dm->GetModuleBaseAddr(targetHwnd, _T("Game.exe")));
+    if (game < kMinimumUserAddress) return false;
+
+    // 0.08.2812: module RVAs of the synchronized clock state.
+    constexpr DWORD kTimeSystemGlobalRva = 0x007CF464;
+    constexpr DWORD kServerEpochLowOffset = 0x6DDF0;
+    constexpr DWORD kServerEpochHighOffset = 0x6DDF4;
+    constexpr DWORD kSyncTickOffset = 0x6DDF8;
+    constexpr DWORD kCurrentTickOffset = 0x28;
+
+    const DWORD bagSlot = static_cast<DWORD>(jz[TaskMemoryState::BagJ]);
+    if (bagSlot < kMinimumUserAddress) return false;
+    const DWORD clockState = Read_Dw(bagSlot);
+    const DWORD timeSystem = Read_Dw(game + kTimeSystemGlobalRva);
+    if (clockState < kMinimumUserAddress || timeSystem < kMinimumUserAddress) return false;
+
+    // A sync can update the timestamp while it is being read; reject mixed data.
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        const DWORD epochLow = Read_Dw(clockState + kServerEpochLowOffset);
+        const DWORD epochHigh = Read_Dw(clockState + kServerEpochHighOffset);
+        const DWORD syncTick = Read_Dw(clockState + kSyncTickOffset);
+        const DWORD nowTick = Read_Dw(timeSystem + kCurrentTickOffset);
+        const DWORD clockStateAgain = Read_Dw(bagSlot);
+        const DWORD timeSystemAgain = Read_Dw(game + kTimeSystemGlobalRva);
+        const DWORD epochLowAgain = Read_Dw(clockStateAgain + kServerEpochLowOffset);
+        const DWORD epochHighAgain = Read_Dw(clockStateAgain + kServerEpochHighOffset);
+        const DWORD syncTickAgain = Read_Dw(clockStateAgain + kSyncTickOffset);
+        if (clockState != clockStateAgain || timeSystem != timeSystemAgain ||
+            epochLow != epochLowAgain || epochHigh != epochHighAgain ||
+            syncTick != syncTickAgain || (epochLow == 0 && epochHigh == 0)) continue;
+
+        const std::uint64_t epoch = (static_cast<std::uint64_t>(epochHigh) << 32) | epochLow;
+        std::uint32_t elapsed = nowTick - syncTick;
+        // Same wraparound convention as tTimeSystem::CalSubTime.
+        if (nowTick < syncTick) --elapsed;
+        unixSeconds = static_cast<std::int64_t>(epoch + elapsed / 1000u);
+        return unixSeconds > 0;
+    }
+    return false;
+}
+
 DWORD CTaskThread::cGetTime()
 {
     if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd) {
         return MAXDWORD;
     }
 
-    const DWORD window = static_cast<DWORD>(ck[Frame_Time]);
+    // 窗口可能在初始化时还没创建（程序比界面先启动），失败时按名字重查一次；
+    // 场景切换后缓存的窗口也可能失效，image 读空时同样重查。
+    DWORD window = static_cast<DWORD>(ck[Frame_Time]);
+    if (window == 0) {
+        window = FindCeguiWindowByName(_T("MiniMap_ChineseTime"));
+        if (window != 0) ck[Frame_Time] = window;
+    }
     if (window == 0) return MAXDWORD;
 
-    // TLBB_MapImage 当前使用的 CEGUI::Image* 保存在 Window + 0x4E0。
-    const DWORD image = Read_Dw(window + 0x4E0);
-    if (image == 0) return MAXDWORD;
+    // TLBB_MapImage 当前使用的 CEGUI::Image* 在 Window + 0x4E0。
+    DWORD image = Read_Dw(window + 0x4E0);
+    if (image == 0) {
+        window = FindCeguiWindowByName(_T("MiniMap_ChineseTime"));
+        if (window != 0) {
+            ck[Frame_Time] = window;
+            image = Read_Dw(window + 0x4E0);
+        }
+        if (image == 0) return MAXDWORD;
+    }
 
     // CEGUI::Image + 0x2C 是图片名 std::string。
     const DWORD nameObject = image + 0x2C;
@@ -1586,11 +2547,23 @@ DWORD CTaskThread::cGetNetIc()
 {
     if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd) return 0;
 
-    const DWORD window = static_cast<DWORD>(ck[MiniMap_MiniMap_NetStatus]);
+    // 初始化早于界面时窗口为空，或场景切换后缓存失效：按名字重查一次。
+    DWORD window = static_cast<DWORD>(ck[MiniMap_MiniMap_NetStatus]);
+    if (window == 0) {
+        window = FindCeguiWindowByName(_T("MiniMap_MiniMap_NetStatus"));
+        if (window != 0) ck[MiniMap_MiniMap_NetStatus] = window;
+    }
     if (window == 0) return 0;
 
-    const DWORD image = Read_Dw(window + 0x4E0);
-    if (image == 0) return 0;
+    DWORD image = Read_Dw(window + 0x4E0);
+    if (image == 0) {
+        window = FindCeguiWindowByName(_T("MiniMap_MiniMap_NetStatus"));
+        if (window != 0) {
+            ck[MiniMap_MiniMap_NetStatus] = window;
+            image = Read_Dw(window + 0x4E0);
+        }
+        if (image == 0) return 0;
+    }
 
     const DWORD nameObject = image + 0x2C;
     const DWORD length = Read_Dw(nameObject + 0x10);
@@ -2011,20 +2984,15 @@ DWORD CTaskThread::mRead_BangZw()
     }
 
     const long targetHwnd = static_cast<long>(reinterpret_cast<INT_PTR>(m_wnd->hWnd));
-    // Resolve the live module base first; the cached value can be stale after
-    // the game logs in again or reloads the client image.
-    DWORD gameModule = static_cast<DWORD>(m_dm->GetModuleBaseAddr(
-        targetHwnd, _T("Game.exe")));
-    if (gameModule == 0 && m_memory) {
-        gameModule = static_cast<DWORD>(m_memory->gameModule);
-    }
-    if (gameModule == 0) {
-        DebugLog(_T("mRead_BangZw: Game.exe module not found"));
+    // Re-read the object from the shared BAGBP slot on every call.
+    const DWORD bagSlot = static_cast<DWORD>(jz[TaskMemoryState::BagJ]);
+    if (bagSlot < kMinimumUserAddress) {
+        DebugLog(_T("mRead_BangZw: BagJ slot is invalid"));
         return 0;
     }
 
     const DWORD playerData = static_cast<DWORD>(m_dm->ReadIntAddr(
-        targetHwnd, static_cast<LONGLONG>(gameModule) + kGuildPlayerGlobalRva, 4));
+        targetHwnd, static_cast<LONGLONG>(bagSlot), 4));
     if (playerData == 0) {
         DebugLog(_T("mRead_BangZw: player data pointer is null"));
         return 0;
@@ -2034,14 +3002,204 @@ DWORD CTaskThread::mRead_BangZw()
         targetHwnd, static_cast<LONGLONG>(playerData) + kGuildRankOffset, 1));
     CString trace;
     trace.Format(_T("mRead_BangZw: global=0x%08lX data=0x%08lX rank=%lu"),
-                 static_cast<unsigned long>(static_cast<LONGLONG>(gameModule) +
-                                             kGuildPlayerGlobalRva),
+                 static_cast<unsigned long>(bagSlot),
                  static_cast<unsigned long>(playerData),
                  static_cast<unsigned long>(rank));
     DebugLog(trace);
 
     // The original switch subtracts two and accepts eight cases (2..9).
     return rank >= 2 && rank <= 9 ? rank : 0;
+}
+
+void CTaskThread::Hk_Paos(int kg)
+{
+    //更换可能需要先 setveh 0
+    DWORD hkwordTarget = (DWORD)jz[TaskMemoryState::Nbsq] + 400;
+	 Dm()->WriteDataAddrFromBin(mmhwnd, jz[TaskMemoryState::Nbsq] + 30 + 0x63, (long)&hkwordTarget, sizeof(hkwordTarget));
+	 Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 400 + 60, 0, kg);
+}
+
+void CTaskThread::HkWorld(int kg)
+{
+	if (!Dm() || !jz[TaskMemoryState::Nbsq]) return;
+	// 与当前 CTaskScript 初始化 HkWord2 的结果标志、内容地址一致（含缓存复用）。
+	m_worldMessageFlag = static_cast<DWORD>(jz[TaskMemoryState::Nbsq] + 1660 + 0x42 + 4);
+	m_worldMessageText = static_cast<DWORD>(jz[TaskMemoryState::Nbsq] + 0x1500);
+	if (kg) Dm()->WriteIntAddr(mmhwnd, m_worldMessageFlag, 0, 0);
+	DWORD hkwordTarget = (DWORD)jz[TaskMemoryState::Nbsq] + 1660;
+	Dm()->WriteDataAddrFromBin(mmhwnd, jz[TaskMemoryState::Nbsq] + 30 + 0x63, (long)&hkwordTarget, sizeof(hkwordTarget));
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1660 + 0x42, 0, kg);
+}
+
+bool CTaskThread::ReadWorldMessage(CString& text)
+{
+    // CX5 的 +470/+2370 与当前代码区布局不同，禁止按旧偏移盲读/清零。
+    if (!Dm() || !m_worldMessageFlag || !m_worldMessageText) return false;
+    if (Dm()->ReadIntAddr(mmhwnd, m_worldMessageFlag, 0) != 1) return false;
+    text = Dm()->ReadStringAddr(mmhwnd, m_worldMessageText, 0, 255);
+    if (!Dm()->WriteIntAddr(mmhwnd, m_worldMessageFlag, 0, 0)) return false;
+    return !text.IsEmpty();  
+}
+
+CString CTaskThread::qHksxwz(CString csc)
+{
+    const int begin = csc.ReverseFind(_T('_'));
+    const int end = csc.ReverseFind(_T('}'));
+    if (begin >= 0 && begin < end) return csc.Mid(begin + 1, end - begin - 1);
+    return _T("ERR");
+}
+
+void CTaskThread::wPsGou(CString cname)
+{
+	DWORD dspbz = 0;
+	if (cname == _T("汾酒")) { dspbz = 0x13747C1; goto labelks; }
+	if (cname == _T("扎染")) { dspbz = 0x13747DC; goto labelks; }
+	if (cname == _T("粮食")) { dspbz = 0x13747C5; goto labelks; }
+	if (cname == _T("红枣")) { dspbz = 0x13747C3; goto labelks; }
+	if (cname == _T("太湖珍珠")) { dspbz = 0x13747CF; goto labelks; }
+	if (cname == _T("白药")) { dspbz = 0x13747DE; goto labelks; }
+	if (cname == _T("干花")) { dspbz = 0x13747D6; goto labelks; }
+	if (cname == _T("笋干")) { dspbz = 0x13747CE; goto labelks; }
+	if (cname == _T("牡丹")) { dspbz = 0x13747D2; goto labelks; }
+	if (cname == _T("豆豉")) { dspbz = 0x13747EA; goto labelks; }
+	if (cname == _T("菠萝")) { dspbz = 0x13747E8; goto labelks; }
+	if (cname == _T("羊肉")) { dspbz = 0x13747E0; goto labelks; }
+
+labelks:
+	if (dspbz == 0) { LogD(_T("EEERRR")); return; }
+    CString action;
+    action.Format(_T("shop buy item=%08lX"), static_cast<unsigned long>(dspbz));
+    DispatchPacketWithInterval(action, [this, dspbz] {
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1090 + 27, 0, dspbz);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0,
+                           jz[TaskMemoryState::Nbsq] + 1090);
+        return Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
+    });
+}
+
+void CTaskThread::wPsChu(DWORD djg)
+{
+    CString action;
+    action.Format(_T("shop sell slot=%lu"), static_cast<unsigned long>(djg));
+    DispatchPacketWithInterval(action, [this, djg] {
+        CString ttsls;
+        ttsls.Format(_T("[[[[%08x]+22C00]+%08x]+14]+4"),
+                     (DWORD)jz[TaskMemoryState::BagJ], djg * 4);
+        DWORD dspbz = Dm()->ReadInt(mmhwnd, ttsls, 4);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1210 + 97, 0, dspbz);
+        ttsls.Format(_T("[[[[%08x]+22C00]+%08x]+14]"),
+                     (DWORD)jz[TaskMemoryState::BagJ], djg * 4);
+        dspbz = Dm()->ReadInt(mmhwnd, ttsls, 5);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1210 + 90, 0, dspbz);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0,
+                           jz[TaskMemoryState::Nbsq] + 1210);
+        return Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
+    });
+}
+
+int CTaskThread::WP_CS(int xuh)
+{
+    if (xuh < 0 || xuh >= 200) return 0;
+
+    CString action;
+    action.Format(_T("shop item sell slot=%d"), xuh);
+    const bool dispatched = DispatchPacketWithInterval(action, [this, xuh] {
+        DWORD slot = static_cast<DWORD>(xuh);
+        Dm()->WriteDataAddrFromBin(
+            mmhwnd, jz[TaskMemoryState::Nbsq] + 700 + 9,
+            reinterpret_cast<long>(&slot), 1);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0,
+                           jz[TaskMemoryState::Nbsq] + 700);
+        return Dm()->WriteIntAddr(
+            mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
+    });
+    return dispatched ? 1 : 0;
+}
+
+int CTaskThread::wDui_Gens(int xuh)
+{
+    if (xuh != 0 && xuh != 1) return -1;
+    bool completed = false;
+    const bool dispatched = DispatchPacketWithInterval(_T("team follow"), [this, xuh, &completed] {
+        const DWORD jine = xuh == 1 ? 0x6F5 : 0x6E9;
+        const LONGLONG block = jz[TaskMemoryState::Nbsq];
+        if (!Dm()->WriteIntAddr(mmhwnd, block + 1330 + 2, 0, jine) ||
+            !Dm()->WriteIntAddr(mmhwnd, block + ZHUBC, 0, block + 1330) ||
+            !Dm()->WriteIntAddr(mmhwnd, block + ZHUBB, 0, 1)) return 0L;
+        const ULONGLONG started = GetTickCount64();
+        while (!m_control->IsStopping() && GetTickCount64() - started < 2000) {
+            if (!WaitIfPaused()) return 0L;
+            if (Dm()->ReadIntAddr(mmhwnd, block + ZHUBB, 0) == 0) {
+                completed = true;
+                return 1L;
+            }
+            SleepEx(50);
+        }
+        return 0L;
+    });
+    return dispatched && completed ? 0 : -1;
+}
+
+void CTaskThread::wSendTeamChat(const CString& message)
+{
+    // TODO：由用户补充队伍频道发送实现。李魁传入 jd+角度，例如 jd+120。
+    // 当前仅记录待发送内容，不发送封包，也不再向同步服务器上报角度。
+    LogD(_T("队伍发言待实现：%s"), message.GetString());
+}
+
+void CTaskThread::wLyGou()
+{
+    DispatchPacketWithInterval(_T("guild buy"), [this] {
+        CString tsls;
+        tsls.Format(_T("[%08x]+22CA8"), (DWORD)jz[TaskMemoryState::BagJ]);
+        DWORD dwdz = Dm()->ReadInt(mmhwnd, tsls, 4);
+        Dm()->WriteDataAddrFromBin(mmhwnd, jz[TaskMemoryState::Nbsq] + 960 + 13, (long)&dwdz, 1);
+        tsls.Format(_T("[%08x]+22CD8"), (DWORD)jz[TaskMemoryState::BagJ]);
+        dwdz = Dm()->ReadInt(mmhwnd, tsls, 4);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 960 + 17, 0, dwdz);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0,
+                           jz[TaskMemoryState::Nbsq] + 960);
+        return Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
+    });
+}
+
+void CTaskThread::wLyChu(int xuh)
+{
+    CString action;
+    action.Format(_T("guild sell slot=%d"), xuh);
+    DispatchPacketWithInterval(action, [this, xuh] {
+        CString tsls;
+        tsls.Format(_T("[[[%08x]+22C00]+%04x]+10"), (DWORD)jz[TaskMemoryState::BagJ], xuh * 4);
+        DWORD dwdz = Dm()->ReadInt(mmhwnd, tsls, 4);
+        Dm()->WriteDataAddrFromBin(mmhwnd, jz[TaskMemoryState::Nbsq] + 1050 + 9, (long)&dwdz, 1);
+        tsls.Format(_T("[%08x]+22CD8"), jz[TaskMemoryState::BagJ]);
+        dwdz = Dm()->ReadInt(mmhwnd, tsls, 4);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1050 + 13, 0, dwdz);
+        tsls.Format(_T("[%08x]+22CA8"), jz[TaskMemoryState::BagJ]);
+        dwdz = Dm()->ReadInt(mmhwnd, tsls, 4);
+        Dm()->WriteDataAddrFromBin(mmhwnd, jz[TaskMemoryState::Nbsq] + 1050 + 20, (long)&dwdz, 1);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0,
+                           jz[TaskMemoryState::Nbsq] + 1050);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
+		while (!m_control->IsStopping()) {
+			SleepEx(20);
+			if (Dm()->ReadIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0) == 0) { break; }
+		}
+        return 1;
+    });
+}
+
+int CTaskThread::wRenw_jie(DWORD npcid, DWORD rwid)
+{
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1350 + 9, 0, npcid);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1350 + 23, 0, rwid);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0, jz[TaskMemoryState::Nbsq] + 1350);
+    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
+	while (!m_control->IsStopping()) {
+		SleepEx(20);
+		if (Dm()->ReadIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0) == 0) { break; }
+	}
+    return 0;
 }
 
 CString CTaskThread::Read_NpcT(int xuh)
@@ -2081,6 +3239,195 @@ CString CTaskThread::Read_NpcT(int xuh)
     // type=0 is the game's GBK/code-page text. length=0 lets dmsoft detect
     // the terminating NUL, so the text is not truncated to a fixed buffer.
     return Dm()->ReadStringAddr(mmhwnd, textAddress, 0, 0);
+}
+
+int CTaskThread::wRenw_jix(DWORD npcid, DWORD rwid)
+{
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1420 + 9, 0, npcid);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1420 + 23, 0, rwid);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0, jz[TaskMemoryState::Nbsq] + 1420);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
+	while (!m_control->IsStopping()) {
+		SleepEx(20);
+		if (Dm()->ReadIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0) == 0) { break; }
+	}
+	return 0;
+}
+
+int CTaskThread::wRenw_wan(DWORD npcid, DWORD rwid)
+{
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1460 + 9, 0, npcid);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1460 + 16, 0, rwid);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0, jz[TaskMemoryState::Nbsq] + 1460);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
+	while (!m_control->IsStopping()) {
+		SleepEx(20);
+		if (Dm()->ReadIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0) == 0) { break; }
+	}
+	return 0;
+}
+
+int CTaskThread::wRenw_fan(DWORD rwid)
+{
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1390 + 9, 0, rwid);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0, jz[TaskMemoryState::Nbsq] + 1390);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
+	while (!m_control->IsStopping()) {
+		SleepEx(20);
+		if (Dm()->ReadIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0) == 0) { break; }
+	}
+	return 0;
+}
+
+int CTaskThread::mRenw_jie(size_t xuh)
+{
+    if (xuh >= VRenw.size()) return -1;
+    CString rewardName, npcName;
+    DWORD rewardId = 0, mapId = 0;
+    Point2f npcPoint{};
+    std::tie(rewardName, rewardId, mapId, npcPoint, npcName) = VRenw[xuh];
+
+    while (!m_control->IsStopping() && Read_GENS()) SleepEx(500);
+    if (m_control->IsStopping()) return -1;
+    if (Read_DTID() == static_cast<int>(mapId)) {
+        wBenTuXuL3f(npcPoint.x, npcPoint.y);
+    } else {
+        wKuaTuXL33(npcPoint.x, npcPoint.y, static_cast<int>(mapId));
+    }
+    wOpenMan(npcName);
+    // 参考医生加血流程：wOpenMan 后等 NPC 对话窗口真正打开再点击
+    bool npcWindowOpen = false;
+    const ULONGLONG jieWindowWaitStarted = GetTickCount64();
+    while (!m_control->IsStopping() &&
+           GetTickCount64() - jieWindowWaitStarted < 10000) {
+        if (IsWndOpen2(Quest_Frame) == 1) { npcWindowOpen = true; break; }
+        SleepEx(200 + rand() % 100);
+    }
+    if (m_control->IsStopping()) return -1;
+    if (!npcWindowOpen) {
+        LogD(_T("mRenw_jie: npc window not open: %s"), npcName.GetString());
+        return -1;
+    }
+    wClickNpc(rewardName); SleepEx(500 + rand() % 500);
+    wRenw_jie(static_cast<DWORD>(aMonst.ID), rewardId);
+    return 0;
+}
+
+int CTaskThread::mRenw_jiao(size_t xuh)
+{
+    if (xuh >= VRenw.size()) return -1;
+    CString rewardName, npcName;
+    DWORD rewardId = 0, mapId = 0;
+    Point2f npcPoint{};
+    std::tie(rewardName, rewardId, mapId, npcPoint, npcName) = VRenw[xuh];
+
+    while (!m_control->IsStopping() && Read_GENS()) SleepEx(500);
+    if (m_control->IsStopping()) return -1;
+    wOpenMan(npcName);
+    // 参考医生加血流程：wOpenMan 后等 NPC 对话窗口真正打开再点击
+    bool npcWindowOpen = false;
+    const ULONGLONG jiaoWindowWaitStarted = GetTickCount64();
+    while (!m_control->IsStopping() &&
+           GetTickCount64() - jiaoWindowWaitStarted < 10000) {
+        if (IsWndOpen2(Quest_Frame) == 1) { npcWindowOpen = true; break; }
+        SleepEx(200 + rand() % 100);
+    }
+    if (m_control->IsStopping()) return -1;
+    if (!npcWindowOpen) {
+        LogD(_T("mRenw_jiao: npc window not open: %s"), npcName.GetString());
+        return -1;
+    }
+    wClickNpc(rewardName); SleepEx(500 + rand() % 500);
+    wRenw_jix(static_cast<DWORD>(aMonst.ID), rewardId); SleepEx(500 + rand() % 500);
+    wRenw_wan(static_cast<DWORD>(aMonst.ID), rewardId); SleepEx(500 + rand() % 500);
+    return 0;
+}
+
+int CTaskThread::mRe_Renx(DWORD rwid)
+{
+    if (rwid == 0 || !m_dm || !m_ready.load() ||
+        !m_wnd || !m_wnd->hWnd) {
+        return -1;
+    }
+
+    const DWORD roleWork = static_cast<DWORD>(jz[TaskMemoryState::RenW]);
+    if (roleWork < kMinimumUserAddress) return -1;
+    const DWORD dataPool = Read_Dw(roleWork);
+    if (dataPool < kMinimumUserAddress) return -1;
+    const DWORD missionTable = Read_Dw(dataPool + kMissionTableOffset);
+    if (missionTable < kMinimumUserAddress) return -1;
+
+    for (int index = 0; index < kMissionRecordCount; ++index) {
+        const DWORD record = missionTable +
+            static_cast<DWORD>(index) * kMissionRecordStride;
+        if (Read_Dw(record + kMissionIdOffset) == rwid) return index;
+    }
+    return -1;
+}
+
+int CTaskThread::mRe_Renx(CString cname)
+{
+    if (cname.IsEmpty() || !m_dm || !m_ready.load() ||
+        !m_wnd || !m_wnd->hWnd ||
+        tsg[TaskMemoryState::Rwerc].IsEmpty()) {
+        return -1;
+    }
+
+    const DWORD root = Read_Dw(tsg[TaskMemoryState::Rwerc]);
+    if (root < kMinimumUserAddress) return -1;
+
+    std::vector<DWORD> pending{root};
+    std::unordered_set<DWORD> visited;
+    constexpr size_t kMaxMissionTreeNodes = 4096;
+    while (!pending.empty() && visited.size() < kMaxMissionTreeNodes) {
+        const DWORD node = pending.back();
+        pending.pop_back();
+        if (node < kMinimumUserAddress || node > 0xFFFFFF00u ||
+            !visited.insert(node).second) {
+            continue;
+        }
+
+        // +0x0D is the tree sentinel byte; only active nodes contain missions.
+        const CString state = Dm()->ReadDataAddr(
+            mmhwnd, static_cast<LONGLONG>(node + 0x0D), 1);
+        if (state.CompareNoCase(_T("00")) != 0) continue;
+
+        const DWORD nameAddress = Read_Dw(node + 0xC0);
+        if (nameAddress >= kMinimumUserAddress) {
+            const CString name = Dm()->ReadStringAddr(
+                mmhwnd, static_cast<LONGLONG>(nameAddress), 0, 0);
+            if (name == cname) {
+                return mRe_Renx(Read_Dw(node + 0x10));
+            }
+        }
+
+        pending.push_back(Read_Dw(node));
+        pending.push_back(Read_Dw(node + 0x08));
+    }
+    return -1;
+}
+
+int CTaskThread::mRenw_wc(DWORD rwxh, int xuh)
+{
+    // A DWORD at +0x0E + xuh*4 must stay within one 0x29-byte record.
+    constexpr int kMaxMissionCounterIndex =
+        (kMissionRecordStride - kPaoShangZijinOffset - sizeof(DWORD)) / sizeof(DWORD);
+    if (rwxh >= static_cast<DWORD>(kMissionRecordCount) ||
+        xuh < 0 || xuh > kMaxMissionCounterIndex ||
+        !m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd) {
+        return -1;
+    }
+
+    const DWORD roleWork = static_cast<DWORD>(jz[TaskMemoryState::RenW]);
+    if (roleWork < kMinimumUserAddress) return -1;
+    const DWORD dataPool = Read_Dw(roleWork);
+    if (dataPool < kMinimumUserAddress) return -1;
+    const DWORD missionTable = Read_Dw(dataPool + kMissionTableOffset);
+    if (missionTable < kMinimumUserAddress) return -1;
+
+    const DWORD record = missionTable + rwxh * kMissionRecordStride;
+    return static_cast<int>(Read_Dw(record + kPaoShangZijinOffset +
+                                    static_cast<DWORD>(xuh) * sizeof(DWORD)));
 }
 
 //---------------------宠物+品----------------------
@@ -2280,6 +3627,72 @@ int CTaskThread::Read_CWXueJi(int xuh)
     return Read_CWHaveSkill(xuh, static_cast<int>(kPetXueJiSkillId)) ? 1 : 0;
 }
 
+void CTaskThread::tCheckXj()
+{
+    if (!m_control || m_control->IsStopping() || !m_ready.load() || !Dm()) return;
+
+    m_hasXueJi = false;
+    m_xjSkillId = 0;
+    wRideOn(0);
+
+    constexpr int kPetCount = 7;
+    int petXuh = static_cast<int>(Mams[CoXuHa]);
+    if (petXuh < 0 || petXuh >= kPetCount) petXuh = 0;
+
+    // 先用当前配置的宠物，没有血祭再扫描其余宠物（优先高级血祭）
+    int bestXuh = -1;
+    int bestXueJi = 0;
+    const int current = Read_CWXueJi(petXuh);
+    if (current > 0) {
+        bestXuh = petXuh;
+        bestXueJi = current;
+    } else {
+        for (int xuh = 0; xuh < kPetCount; ++xuh) {
+            if (xuh == petXuh) continue;
+            const int level = Read_CWXueJi(xuh);
+            if (level > bestXueJi) {
+                bestXuh = xuh;
+                bestXueJi = level;
+            }
+            if (bestXueJi == 2) break;
+        }
+    }
+
+    if (bestXuh >= 0 && bestXuh != petXuh) {
+        LogD(_T("tCheckXj: switch pet %d -> %d (xueji=%d)"),
+             petXuh, bestXuh, bestXueJi);
+        Mams[CoXuHa] = static_cast<DWORD>(bestXuh);
+        petXuh = bestXuh;
+    }
+
+    // 未出战先召唤（参考 Pet_Xueup 的出战流程）
+    if (!Read_CWCZ(petXuh)) {
+        Point2f position{};
+        if (UpdateMP(static_cast<DWORD>(jz[TaskMemoryState::jYcdiz]), 0x100) &&
+            dwls >= kMinimumUserAddress) {
+            position.x = *reinterpret_cast<float*>(static_cast<ULONG_PTR>(dwls) + 0x54);
+            position.y = *reinterpret_cast<float*>(static_cast<ULONG_PTR>(dwls) + 0x5C);
+            if (std::isfinite(position.x) && std::isfinite(position.y)) {
+                wBenTuXuL2(position.x + 0.1f, position.y);
+                SleepEx(500);
+            }
+        }
+        wPet_Chu(petXuh, 0);
+        for (int index = 0; index < 10 && !m_control->IsStopping() &&
+                            !Read_CWCZ(petXuh); ++index) {
+            SleepEx(1000);
+        }
+    }
+
+    m_hasXueJi = bestXueJi > 0;
+    // 技能号取宠物技能表 SkillTemplate_V1：696=血祭 697=高级血祭
+    m_xjSkillId = bestXueJi == 2 ? kPetGaoJiXueJiSkillId
+                                 : (bestXueJi == 1 ? kPetXueJiSkillId : 0u);
+    LogD(_T("tCheckXj: pet=%d xueji=%d skill=%u chuzhan=%d"),
+         petXuh, bestXueJi, static_cast<unsigned>(m_xjSkillId),
+         Read_CWCZ(petXuh) ? 1 : 0);
+}
+
 BagItem CTaskThread::Read_BagX(int zl)
 {
     if (!m_dm || !m_ready.load()) return BagItem{};
@@ -2379,15 +3792,164 @@ BagItem CTaskThread::Read_BagN3(CString Nam, int djg, int zl)
     return item;
 }
 
+int CTaskThread::PAND_WPLX2(int xuh)
+{
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd ||
+        xuh < 0 || xuh >= 200) {
+        return -100;
+    }
+
+    const DWORD bagSlot = static_cast<DWORD>(jz[TaskMemoryState::BagJ]);
+    const DWORD bagBase = Read_Dw(bagSlot);
+    const DWORD itemTable = bagBase == 0 ? 0 : Read_Dw(bagBase + 0x22C00);
+    const DWORD item = itemTable == 0
+        ? 0 : Read_Dw(itemTable + static_cast<DWORD>(xuh) * sizeof(DWORD));
+    if (item == 0) return -100;
+
+    CString expression;
+    expression.Format(_T("[[[[[%08x]+22C00]+%08x]+2C]+58]"),
+                      bagSlot, static_cast<DWORD>(xuh) * 4);
+    const CString equipmentType = Dm()->ReadString(mmhwnd, expression, 0, 0);
+    const CString equipmentTypes =
+        _T("枪棒类扇类环类刀斧类单短类双短类琴类衣服项链帽子护肩护腕手套腰带鞋戒指护符");
+
+    // 原版 Read_WPLX 将常规武器/防具分为 1，其他装备分为 1001。
+    if (!equipmentType.IsEmpty() && equipmentTypes.Find(equipmentType) >= 0) {
+        return 3;
+    }
+    if (!equipmentType.IsEmpty()) {
+        if (cRead_Identify(static_cast<DWORD>(xuh)) == 1) return 3;
+
+        expression.Format(_T("[[[[[%08x]+22C00]+%08x]+2C]+34]"),
+                          bagSlot, static_cast<DWORD>(xuh) * 4);
+        if (Dm()->ReadString(mmhwnd, expression, 0, 0).Find(_T("全套由")) >= 0) {
+            return 3;
+        }
+
+        expression.Format(_T("[[[[%08x]+22C00]+%08x]+2C]+2C"),
+                          bagSlot, static_cast<DWORD>(xuh) * 4);
+        const DWORD level = static_cast<DWORD>(Dm()->ReadInt(mmhwnd, expression, 4));
+        return level <= 60 ? 3 : 2;
+    }
+
+    expression.Format(_T("[[[[[%08x]+22C00]+%08x]+2C]+50]"),
+                      bagSlot, static_cast<DWORD>(xuh) * 4);
+    const CString category = Dm()->ReadString(mmhwnd, expression, 0, 0);
+
+    expression.Format(_T("[[[[[%08x]+22C00]+%08x]+2C]+18]"),
+                      bagSlot, static_cast<DWORD>(xuh) * 4);
+    const CString name = Dm()->ReadString(mmhwnd, expression, 0, 0);
+
+    if (category == _T("奇物") || category.Find(_T("鉴定")) >= 0) {
+        return name == _T("龙纹青瓷瓶") ? 4 : 3;
+    }
+    if (category == _T("珍兽用品")) {
+        if (name == _T("升魂丹匣")) return 4;
+        return cRead_Bind(static_cast<DWORD>(xuh)) == 1 ? 1 : 2;
+    }
+    if (category.Find(_T("特殊")) >= 0 && category != _T("特殊道具")) {
+        if (name.Find(_T("润魂石")) >= 0 || name == _T("金蚕丝") ||
+            name == _T("黄纸")) {
+            return 2;
+        }
+        if (name.Find(_T("棉布")) >= 0 || name.Find(_T("秘银")) >= 0) {
+            return cRead_Bind(static_cast<DWORD>(xuh)) == 1 ? 1 : 2;
+        }
+        if (name.Find(_T("残篇")) >= 0) {
+            return cRead_Bind(static_cast<DWORD>(xuh)) == 1 ? 3 : 1;
+        }
+        if (name.Find(_T("功力丹")) >= 0 || name == _T("绘金尘")) return 1;
+        if (name.Find(_T("扫荡金币")) >= 0 || name.Find(_T("青丘")) >= 0) return 4;
+        if (name.Find(_T("暗器")) >= 0 || name.Find(_T("灵药")) >= 0 ||
+            name.Find(_T("百变如意")) >= 0) {
+            return 3;
+        }
+        if (!tsg[TaskMemoryState::wpcs].IsEmpty() &&
+            tsg[TaskMemoryState::wpcs].Find(name) >= 0) {
+            return 3;
+        }
+        return 1;
+    }
+    if (category == _T("神器材料") || category == _T("稀有物品")) return 1;
+    if (category == _T("珍兽蛋") || category == _T("时装材料") ||
+        category == _T("要诀") || category.Find(_T("铸造")) >= 0 ||
+        category.Find(_T("工艺")) >= 0 || category.Find(_T("缝纫")) >= 0 ||
+        category.Find(_T("皮毛")) >= 0 || category.Find(_T("制药")) >= 0 ||
+        category.Find(_T("肉类")) >= 0 || category == _T("药品") ||
+        category == _T("食物")) {
+        return name == _T("鹿茸丹") ? 4 : 3;
+    }
+    if (category == _T("特殊道具")) return 2;
+    return -1;
+}
+
+CString CTaskThread::Read_BagCr(int zl)
+{
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd || zl < 0 || zl >= 200) {
+        return CString();
+    }
+
+    const DWORD bagSlot = static_cast<DWORD>(jz[TaskMemoryState::BagJ]);
+    if (bagSlot < kMinimumUserAddress) return CString();
+
+    const DWORD bagBase = Read_Dw(bagSlot);
+    if (bagBase < kMinimumUserAddress) return CString();
+
+    const DWORD itemTable = Read_Dw(bagBase + 0x22C00);
+    if (itemTable < kMinimumUserAddress) return CString();
+
+    const DWORD item = Read_Dw(itemTable + static_cast<DWORD>(zl) * sizeof(DWORD));
+    if (item < kMinimumUserAddress) return CString();
+
+    const DWORD state = Read_Dw(item + 0x14);
+    if (state < kMinimumUserAddress) return CString();
+
+    // The creator text is embedded in the state object at +0x10.
+    const DWORD creator = state + 0x10;
+    return Dm()->ReadStringAddr(
+        static_cast<long>(reinterpret_cast<INT_PTR>(m_wnd->hWnd)),
+        static_cast<LONGLONG>(creator), 0, 0);
+}
+
 int CTaskThread::wPet_Chu(int xuh, int cz)
 {
+    if (!m_memory || !m_control || m_control->IsStopping()) return -1;
+    // Match the reference short-circuit: do not send a packet when the pet
+    // is already in the requested state.
+    if (Read_CWCZ(xuh) && cz == 0) return 0;
+    if (!Read_CWCZ(xuh) && cz == 1) return 1;
 
-	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 750 + 16, 0, Mams[Cox1]);
-	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 750 + 23, 0, Mams[Cox2]);
-	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 750 + 30, 0, cz);    
-	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0, jz[TaskMemoryState::Nbsq] + 750);
-    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
-    return 0;
+    // The client refuses the pet action while happiness is below 80. Feed the
+    // configured 回旋金球 first; wUseBag2 keeps the common packet interval.
+    while (!m_control->IsStopping() && Read_CWHapp(xuh) < 80) {
+        bag[balsy] = Read_BagN3(_T("回旋金球"), 0, 3);
+        if (bag[balsy].xuh == static_cast<DWORD>(-1)) {
+            LogD(_T("请购买回旋金球"));
+            return -2;
+        }
+        wUseBag2();
+        SleepEx(500);
+    }
+    if (!m_control || m_control->IsStopping()) return -1;
+
+    // Keep the old 31-second client-side throttle, but store it per window.
+    if (m_memory->lastPetActionTick != 0 &&
+        GetTickCount() - m_memory->lastPetActionTick < 31 * 1000) {
+        return -3;
+    }
+
+    CString action;
+    action.Format(_T("pet action slot=%d mode=%d"), xuh, cz);
+    const bool sent = DispatchPacketWithInterval(action, [this, cz] {
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 750 + 16, 0, Mams[Cox1]);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 750 + 23, 0, Mams[Cox2]);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 750 + 30, 0, cz);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0,
+                           jz[TaskMemoryState::Nbsq] + 750);
+        return Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
+    });
+    if (sent) m_memory->lastPetActionTick = GetTickCount();
+    return sent ? 0 : -1;
 }
 
 void CTaskThread::wUseBag2(int zl)
@@ -2414,17 +3976,22 @@ void CTaskThread::wUseBag2(int zl)
 
 bool CTaskThread::wUseBag2()
 {
-	Dm()->WriteDataAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 800 + 9, bag[balsy].csxuh);
-	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 800 + 13, 0, bag[balsy].sj3);
-	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 800 + 20, 0, bag[balsy].sj1);
-	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 800 + 27, 0, bag[balsy].sj2);
-	Mams[TaskMemoryState::dZJID] = Dm()->ReadInt(mmhwnd, tsg[TaskMemoryState::ZJID], 4);//每次使用物品更新
-	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 800 + 34, 0, Mams[TaskMemoryState::dZJID]);//打怪开始就更新 不换图不更新
-	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 800 + 62, 0, bag[balsy].cow1);
-	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 800 + 69, 0, bag[balsy].cow2);
-	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0, jz[TaskMemoryState::Nbsq] + 800);
-    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
-    return true;// use command issued (reference semantics)
+    CString action;
+    action.Format(_T("use bag slot=%lu"), static_cast<unsigned long>(bag[balsy].xuh));
+    return DispatchPacketWithInterval(action, [this] {
+        Dm()->WriteDataAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 800 + 9, bag[balsy].csxuh);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 800 + 13, 0, bag[balsy].sj3);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 800 + 20, 0, bag[balsy].sj1);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 800 + 27, 0, bag[balsy].sj2);
+        Mams[TaskMemoryState::dZJID] = Dm()->ReadInt(mmhwnd, tsg[TaskMemoryState::ZJID], 4);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 800 + 34, 0,
+                           Mams[TaskMemoryState::dZJID]);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 800 + 62, 0, bag[balsy].cow1);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 800 + 69, 0, bag[balsy].cow2);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0,
+                           jz[TaskMemoryState::Nbsq] + 800);
+        return Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
+    });
 }
 
 bool CTaskThread::wUseBag2x(int xuh)
@@ -2479,6 +4046,37 @@ CString CTaskThread::mGet_Kjda(CString cTim)
     return CString(bestEntry->answer.c_str());
 }
 
+bool CTaskThread::ReadKejuQuestion(CString& outQuestion, CString& outAnswer)
+{
+    outQuestion.Empty();
+    outAnswer.Empty();
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd) return false;
+
+    const DWORD textWindow = FindCeguiWindowByName(_T("Examination_Text"));
+    if (textWindow == 0) return false;
+
+    CString question = ReadCeguiText(textWindow);
+    if (question.IsEmpty()) return false;
+
+    // 只保留「下列答案」之前的部分（去掉后面的“下列答案中只有1个是正确的，请选择”提示语）；
+    // 没有该提示语时退回按第一个问号截取。
+    const int hint = question.Find(_T("下列答案"));
+    if (hint >= 0) {
+        question = question.Left(hint);
+    } else {
+        const int mark = question.Find(static_cast<TCHAR>(0xFF1F));
+        if (mark >= 0) question = question.Left(mark + 1);
+    }
+
+    outQuestion = question;
+    outAnswer = mGet_Kjda(question);
+    if (outAnswer.IsEmpty()) {
+        // 没匹配到答案的题目收集到 kjda_unmatched.csv，便于事后补答案。
+        KjdaAppendUnmatched(question);
+    }
+    return true;
+}
+
 DWORD CTaskThread::CopyNearbyDescriptor(DWORD node, CString& expression) {
     expression = BuildNearbyDescriptorExpression(node);
     if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd || node == 0) {
@@ -2527,7 +4125,7 @@ void CTaskThread::NerbAr(DWORD Erc) {
     visit(Erc);
 }
 
-int CTaskThread::NerbMonst2(DWORD Erc, regex txt_reg) {
+int CTaskThread::NerbMonst2(DWORD Erc, regex txt_reg, bool logSummary) {
     varrou.clear();
     NerbAr(Erc);
     vMonst.clear();
@@ -2535,7 +4133,7 @@ int CTaskThread::NerbMonst2(DWORD Erc, regex txt_reg) {
 
     Point2f playerPosition{};
     if (!ReadNearbyPlayerPosition(playerPosition)) {
-        DebugLog(_T("nearby scan skipped: player position is unavailable"));
+        if (logSummary) DebugLog(_T("nearby scan skipped: player position is unavailable"));
         return 0;
     }
 
@@ -2574,12 +4172,41 @@ int CTaskThread::NerbMonst2(DWORD Erc, regex txt_reg) {
             id, node, distance, descriptorExpression, name, position));
     }
 
-    CString message;
-    message.Format(_T("nearby regex scan: nodes=%lu matches=%lu"),
-                   static_cast<unsigned long>(varrou.size()),
-                   static_cast<unsigned long>(vMonst.size()));
-    DebugLog(message);
+    if (logSummary) {
+        CString message;
+        message.Format(_T("nearby regex scan: nodes=%lu matches=%lu"),
+                       static_cast<unsigned long>(varrou.size()),
+                       static_cast<unsigned long>(vMonst.size()));
+        DebugLog(message);
+    }
     return static_cast<int>(vMonst.size());
+}
+
+std::vector<Monst> CTaskThread::FindAttackableMonsters(
+    DWORD Erc, regex txt_reg, float distance, bool logSummary) {
+    std::vector<Monst> attackable;
+    if (distance <= 0.0f) return attackable;
+
+    m_nearbyDistanceLimit = distance;
+    NerbMonst2(Erc, txt_reg, logSummary);
+    if (vMonst.empty()) return attackable;
+
+    const DWORD playerObject = Read_Dw(
+        static_cast<DWORD>(jz[TaskMemoryState::jYcdiz]));
+    if (playerObject == 0) return attackable;
+
+    attackable.reserve(vMonst.size());
+    for (const Monst& monster : vMonst) {
+        if (m_control && m_control->IsStopping()) break;
+        if (!WaitIfPaused() || monster.ID <= 0 || monster.Dibu == 0 ||
+            monster.cxue.IsEmpty()) continue;
+
+        const DWORD targetObject = Read_Dw(monster.Dibu);
+        if (targetObject != 0 && mCanAttack(playerObject, targetObject)) {
+            attackable.push_back(monster);
+        }
+    }
+    return attackable;
 }
 
 int CTaskThread::NerbMonst3(DWORD Erc, int leix) {
@@ -2678,31 +4305,39 @@ int CTaskThread::NerbMonst3(DWORD Erc, int leix, CString txt_reg) {
 
 int CTaskThread::NerbXian(DWORD Erc, CString txt_reg) {
     varrou.clear();
-    NerbAr(Erc);
     vMonst.clear();
+    if (!Erc) return -1;
+    NerbAr(Erc);
     if (varrou.empty()) return 0;
 
     Point2f playerPosition{};
     if (!ReadNearbyPlayerPosition(playerPosition)) {
         DebugLog(_T("trap scan skipped: player position is unavailable"));
-        return 0;
+        return -1;
     }
 
+    std::vector<CString> names;
+    int begin = 0;
+    for (CString token = txt_reg.Tokenize(_T("|"), begin); !token.IsEmpty();
+         token = txt_reg.Tokenize(_T("|"), begin)) names.push_back(token);
     for (const DWORD node : varrou) {
         const CString name = Dm()->ReadString(
             mmhwnd, BuildNearbyTrapNameExpression(node).GetString(), 0, 0);
-        if (name.IsEmpty() || name.Find(txt_reg) == -1) continue;
+        if (name.IsEmpty() || std::none_of(names.begin(), names.end(), [&](const CString& part) {
+            return name.Find(part) >= 0;
+        })) continue;
 
-        if (!UpdateMP(node, kNearbyEntityCopyLength)) continue;
+        if (!UpdateMP(node, kNearbyEntityCopyLength)) return -1;
         const DWORD entityCopy = dwls;
         Point2f position{};
         if (!ReadNearbyLocalValue(entityCopy, kNearbyTrapXOffset, position.x) ||
             !ReadNearbyLocalValue(entityCopy, kNearbyTrapYOffset, position.y)) {
-            continue;
+            return -1;
         }
+        if (!std::isfinite(position.x) || !std::isfinite(position.y)) return -1;
 
         const float distance = NearbyDistance(playerPosition, position);
-        if (distance >= m_nearbyDistanceLimit) continue;
+        // 不继承上次怪物筛选的距离，否则会漏掉直线路径或 BOSS 周围的阵。
 
         int id = 0;
         (void)ReadNearbyLocalValue(entityCopy, kNearbyNameOffset, id);
@@ -2718,7 +4353,129 @@ int CTaskThread::NerbXian(DWORD Erc, CString txt_reg) {
     return static_cast<int>(vMonst.size());
 }
 
-int CTaskThread::NerbMonst222(DWORD Erc, regex txt_reg) {
+bool CTaskThread::Read_Sfem()
+{
+    const int teamCount = Read_TeamC();
+    const DWORD teamBase = static_cast<DWORD>(jz[TaskMemoryState::Duiwu]);
+    if (teamBase == 0) return false;
+    for (int index = 0; index < teamCount; ++index) {
+        CString expression;
+        expression.Format(_T("[[[%08lX]+BC]+%08lX]+30"),
+                          static_cast<unsigned long>(teamBase),
+                          static_cast<unsigned long>(index * 4));
+        if ((Read_Dw(expression) & 0xFFu) == 4) return true;
+    }
+    return false;
+}
+
+int CTaskThread::Read_TeamC()
+{
+    const DWORD teamBase = static_cast<DWORD>(jz[TaskMemoryState::Duiwu]);
+    if (teamBase == 0) return 0;
+
+    CString expression;
+    expression.Format(_T("[%08lX]+AC"), static_cast<unsigned long>(teamBase));
+    if (Read_Dw(expression) == 0) return 0;
+    expression.Format(_T("[%08lX]+C0"), static_cast<unsigned long>(teamBase));
+    const DWORD end = Read_Dw(expression);
+    expression.Format(_T("[%08lX]+BC"), static_cast<unsigned long>(teamBase));
+    const DWORD begin = Read_Dw(expression);
+    if (end < begin) return 0;
+    return static_cast<int>((end - begin) >> 2);
+}
+
+int CTaskThread::Read_TeamDtId(int xuh)
+{
+    if (xuh < 0) return -1;
+    CString expression;
+    expression.Format(_T("[[[%08lX]+BC]+%08lX]+0A"),
+                      static_cast<unsigned long>(jz[TaskMemoryState::Duiwu]),
+                      static_cast<unsigned long>(xuh * 4));
+    const DWORD value = Read_Dw(expression);
+    return value == 0 ? -1 : static_cast<int>(value & 0xFFFFu);
+}
+
+CString CTaskThread::Read_DuiwMz(int xuh)
+{
+    if (xuh < 0) return CString();
+    CString expression;
+    expression.Format(_T("[[[%08lX]+BC]+%08lX]+10"),
+                      static_cast<unsigned long>(jz[TaskMemoryState::Duiwu]),
+                      static_cast<unsigned long>(xuh * 4));
+    return Dm() ? Dm()->ReadString(mmhwnd, expression.GetString(), 0, 0)
+                : CString();
+}
+
+DWORD CTaskThread::Read_DuiwId(int xuh)
+{
+    if (xuh < 0) return 0;
+    CString expression;
+    expression.Format(_T("[[[%08lX]+BC]+%08lX]+4"),
+                      static_cast<unsigned long>(jz[TaskMemoryState::Duiwu]),
+                      static_cast<unsigned long>(xuh * 4));
+    return Read_Dw(expression);
+}
+
+DWORD CTaskThread::Read_Ziji()
+{
+    const CString myName = tsg[TaskMemoryState::m_Name];
+    for (int index = 0; index < Read_TeamC(); ++index) {
+        if (!myName.IsEmpty() && Read_DuiwMz(index) == myName) {
+            return static_cast<DWORD>(index);
+        }
+    }
+    return static_cast<DWORD>(-1);
+}
+
+Point2f CTaskThread::Read_DuiwZb(int xuh)
+{
+    Point2f result{};
+    if (xuh < 0 || !Dm()) return result;
+    CString expression;
+    expression.Format(_T("[[[%08lX]+BC]+%08lX]+40"),
+                      static_cast<unsigned long>(jz[TaskMemoryState::Duiwu]),
+                      static_cast<unsigned long>(xuh * 4));
+    result.x = Dm()->ReadFloat(mmhwnd, expression.GetString());
+    expression.Format(_T("[[[%08lX]+BC]+%08lX]+44"),
+                      static_cast<unsigned long>(jz[TaskMemoryState::Duiwu]),
+                      static_cast<unsigned long>(xuh * 4));
+    result.y = Dm()->ReadFloat(mmhwnd, expression.GetString());
+    return result;
+}
+
+DWORD CTaskThread::Read_Dmax(int xuh)
+{
+    if (xuh < 0) return 0;
+    CString expression;
+    expression.Format(_T("[[[%08lX]+BC]+%08lX]+4C"),
+                      static_cast<unsigned long>(jz[TaskMemoryState::Duiwu]),
+                      static_cast<unsigned long>(xuh * 4));
+    return Read_Dw(expression);
+}
+
+int CTaskThread::Read_NeedJx2(DWORD diz, float bfb, DWORD rid)
+{
+    (void)rid;
+    if (!UpdateMP(diz, 0x100)) return 2;
+    const float hp = *reinterpret_cast<float*>(static_cast<ULONG_PTR>(dwls) + 0x08);
+    if (!std::isfinite(hp) || hp <= 0.0f) return 2;
+    return hp <= bfb ? 2 : 3;
+}
+
+int CTaskThread::Read_MoBelo(DWORD diz, std::vector<DWORD>& vddwid)
+{
+    if (diz == 0) return 0;
+    const DWORD component = Read_Dw(diz + 0x148);
+    const DWORD character = component == 0 ? 0 : Read_Dw(component + 0x10);
+    const DWORD owner = character == 0 ? 0 : Read_Dw(character + 0x1C);
+    if (owner == 0xFFFFFFFFu) return 2;
+    for (const DWORD memberId : vddwid) {
+        if (owner == memberId) return 1;
+    }
+    return 0;
+}
+
+int CTaskThread::NerbMonst222(DWORD Erc, regex txt_reg, bool logSummary) {
     varrou.clear();
     NerbAr(Erc);
     vMonst.clear();
@@ -2726,7 +4483,7 @@ int CTaskThread::NerbMonst222(DWORD Erc, regex txt_reg) {
 
     Point2f playerPosition{};
     if (!ReadNearbyPlayerPosition(playerPosition)) {
-        DebugLog(_T("nearby fixed-point scan skipped: player position is unavailable"));
+        if (logSummary) DebugLog(_T("nearby fixed-point scan skipped: player position is unavailable"));
         return 0;
     }
 
@@ -2757,20 +4514,96 @@ int CTaskThread::NerbMonst222(DWORD Erc, regex txt_reg) {
             id, node, distance, descriptorExpression, name, position));
     }
 
-    CString message;
-    message.Format(_T("nearby fixed-point scan: nodes=%lu matches=%lu"),
-                   static_cast<unsigned long>(varrou.size()),
-                   static_cast<unsigned long>(vMonst.size()));
-    DebugLog(message);
+    if (logSummary) {
+        CString message;
+        message.Format(_T("nearby fixed-point scan: nodes=%lu matches=%lu"),
+                       static_cast<unsigned long>(varrou.size()),
+                       static_cast<unsigned long>(vMonst.size()));
+        DebugLog(message);
+    }
     return static_cast<int>(vMonst.size());
 }
 
-void CTaskThread::wUseSk6(DWORD jiid, DWORD moid)
+bool CTaskThread::wUseSk6(DWORD jiid, DWORD moid, bool basicAttack)
 {
-	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 590 + 16, 0, jiid);
-	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 590 + 45, 0, moid);
-	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0, jz[TaskMemoryState::Nbsq] + 590);
-    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
+    CString action;
+    action.Format(_T("skill id=%lu monster=%lu"),
+                  static_cast<unsigned long>(jiid), static_cast<unsigned long>(moid));
+    return DispatchPacketWithInterval(action, [this, jiid, moid] {
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 590 + 16, 0, jiid);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 590 + 45, 0, moid);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0,
+                           jz[TaskMemoryState::Nbsq] + 590);
+        while (Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1) == 0) SleepEx(20);
+
+		while (!m_control->IsStopping()) {
+            SleepEx(20);
+			if (Dm()->ReadIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0) == 0) { break; }
+		}
+   //     if (IsWndOpen2(QuitRelative_Frame_Back)==1) {
+			//DebugLog(_T("disconnect dialog detected; stopping threads"));
+			//m_control->Stop();
+			//return 0;
+   //     }
+        return 1;
+    }, basicAttack, PacketAction::Skill);
+
+}
+
+bool CTaskThread::wUseSk6(DWORD jiid, Point2f ptx, bool basicAttack)
+{
+    CString action;
+    action.Format(_T("skill id=%lu point=(%.1f, %.1f)"),
+                  static_cast<unsigned long>(jiid), ptx.x, ptx.y);
+    return DispatchPacketWithInterval(action, [this, jiid, ptx] {
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 590 + 16, 0, jiid);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 590 + 45, 0, -1);
+        Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 590 + 0x34, ptx.x);
+        Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 590 + 0x3B, ptx.y);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0,
+                           jz[TaskMemoryState::Nbsq] + 590);
+        while (Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1) == 0) SleepEx(20);
+
+        while (!m_control->IsStopping()) {
+            SleepEx(20);
+            if (Dm()->ReadIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0) == 0) { break; }
+        }
+        return 1;
+    }, basicAttack, PacketAction::Skill);
+}
+bool CTaskThread::wUseSk6cw(DWORD jiid)
+{
+    if (!jiid || Mams[CoXuHa] == MAXDWORD || !Dm() ||
+        !m_control || m_control->IsStopping()) return false;
+    const DWORD petId = static_cast<DWORD>(Read_CWID(static_cast<int>(Mams[CoXuHa])));
+    if (!petId || petId == MAXDWORD) return false;
+    return DispatchPacketWithInterval(_T("pet skill"), [this, jiid, petId] {
+        // CX5 WsUseSkcw 的实际数组为 0x3E 字节；旧初始化的 70/旧调用的
+        // +3790 不一致。独立放在当前 0x2000 分配区的 +0x1600，按实际长度回跳。
+        BYTE code[] = {
+            0xC7,0x06,0x99,0x00,0x1C,0x00,0xC7,0x46,0x06,0x00,0x00,0x80,
+            0xBF,0xC7,0x46,0x0A,0xF8,0x02,0x00,0x00,0xC7,0x46,0x0E,0xFF,
+            0xFF,0xFF,0xFF,0xC7,0x46,0x12,0x00,0x00,0x00,0x00,0xC7,0x46,
+            0x16,0xFF,0xFF,0xFF,0xFF,0xC7,0x46,0x1A,0x00,0x00,0x80,0xBF,
+            0xC7,0x46,0x1E,0x00,0x00,0x80,0xBF,0x6A,0x22,0xE9,0,0,0,0
+        };
+        constexpr DWORD offset = 0x1600;
+        const DWORD back = static_cast<DWORD>((FENGT) - offset - sizeof(code));
+        memcpy(code + 16, &jiid, sizeof(jiid));
+        memcpy(code + 30, &petId, sizeof(petId));
+        memcpy(code + sizeof(code) - 4, &back, sizeof(back));
+        const LONGLONG address = jz[TaskMemoryState::Nbsq] + offset;
+        if (!Dm()->WriteDataAddrFromBin(mmhwnd, address,
+                static_cast<long>(reinterpret_cast<INT_PTR>(code)), sizeof(code)) ||
+            !Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0, address) ||
+            !Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1)) return 0L;
+        const DWORD started = GetTickCount();
+        while (!m_control->IsStopping() && GetTickCount() - started < 2000) {
+            if (Dm()->ReadIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0) == 0) return 1L;
+            SleepEx(20);
+        }
+        return 0L;
+    }, false, PacketAction::Skill);
 }
 
 void CTaskThread::NearbyMonst5(DWORD Erc) {
@@ -2824,26 +4657,107 @@ void CTaskThread::NearbyMonst5(DWORD Erc) {
 
 void CTaskThread::mLua_Dostr(CString csc)
 {
-    Dm()->WriteStringAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 0x1000, 0, csc);
-    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTC, 0, jz[TaskMemoryState::Nbsq] + 670);//标准
-    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTB, 0, 1);
+    DispatchPacketWithInterval(_T("lua command"), [this, &csc] {
+        Dm()->WriteStringAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 0x1500, 0, csc);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTC, 0,
+                           jz[TaskMemoryState::Nbsq] + 670);
+        if (Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTB, 0, 1) == 0) {
+            return 0L;
+        }
+
+        // Lua runs asynchronously in the injected stub.  Do not let the next
+        // packet overwrite the shared Lua buffer while the callback is still
+        // executing (this is especially important for MessageBox callbacks).
+        const DWORD waitStart = ::GetTickCount();
+        while (!m_control->IsStopping()) {
+            if (Dm()->ReadIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTB, 0) == 0) {
+                return 1L;
+            }
+            if (::GetTickCount() - waitStart >= 3000) {
+                LogD(_T("lua command completion timeout"));
+                return 0L;
+            }
+            SleepEx(20);
+        }
+        return 0L;
+    });
 }
 
 void CTaskThread::wClickNpc(DWORD djg, DWORD gjg)
 {
-    CString tsls;
-    const DWORD renW = static_cast<DWORD>(jz[TaskMemoryState::RenW]);
-	tsls.Format(_T("[[%08x]+2C]+%08x"), renW, djg * 0x118 + 0x118);
-	DWORD cwid = Dm()->ReadInt(mmhwnd, tsls, 4);
-    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 700 + 9, 0, cwid);
-	tsls.Format(_T("[[%08x]+2C]"), renW);
-	DWORD cwid2 = Dm()->ReadInt(mmhwnd, tsls, 4);
-    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 700 + 23, 0, cwid2);
-	tsls.Format(_T("[[%08x]+2C]+%08x"), renW, djg * 0x118 + 0x10);
-	DWORD cwid3 = Dm()->ReadInt(mmhwnd, tsls, 4);
-    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 700 + 16, 0, cwid3);
-    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0, jz[TaskMemoryState::Nbsq] + 700);
-    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
+    CString action;
+    action.Format(_T("npc click index=%lu"), static_cast<unsigned long>(djg));
+    DispatchPacketWithInterval(action, [this, djg] {
+        CString tsls;
+        const DWORD renW = static_cast<DWORD>(jz[TaskMemoryState::RenW]);
+        tsls.Format(_T("[[%08x]+2C]+%08x"), renW, djg * 0x118 + 0x118);
+        DWORD cwid = Dm()->ReadInt(mmhwnd, tsls, 4);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 700 + 9, 0, cwid);
+        tsls.Format(_T("[[%08x]+2C]"), renW);
+        DWORD cwid2 = Dm()->ReadInt(mmhwnd, tsls, 4);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 700 + 23, 0, cwid2);
+        tsls.Format(_T("[[%08x]+2C]+%08x"), renW, djg * 0x118 + 0x10);
+        DWORD cwid3 = Dm()->ReadInt(mmhwnd, tsls, 4);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 700 + 16, 0, cwid3);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0,
+                           jz[TaskMemoryState::Nbsq] + 700);
+        return Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
+    });
+}
+
+void CTaskThread::wClickNpc(CString cname)
+{
+    int npcIndex = -1;
+    for (size_t index = 0; index < 20; ++index) {
+        if (Read_NpcT(static_cast<int>(index)) == cname) {
+            npcIndex = static_cast<int>(index);
+            break;
+        }
+    }
+
+    LogD(_T("xuh:%d"), npcIndex);
+    if (npcIndex == -1) return;
+    if (cname == _T("\u5927\u52ab\u5927\u96be")) {
+        wClickNpcDJ(static_cast<DWORD>(npcIndex));
+        return;
+    }
+    wClickNpc(static_cast<DWORD>(npcIndex));
+}
+
+void CTaskThread::wClickNpcDJ(DWORD djg, DWORD gjg)
+{
+    if (!m_control || m_control->IsStopping()) return;
+
+    const DWORD nbsq = static_cast<DWORD>(jz[TaskMemoryState::Nbsq]);
+    CString action;
+    action.Format(_T("npc special click index=%lu"), static_cast<unsigned long>(djg));
+    DispatchPacketWithInterval(action, [this, djg, gjg, nbsq] {
+        CString expression;
+        const DWORD renW = static_cast<DWORD>(jz[TaskMemoryState::RenW]);
+        expression.Format(_T("[[%08x]+2C]+%08x"), renW, djg * 0x118 + 0x118);
+        const DWORD cwid = static_cast<DWORD>(Dm()->ReadInt(mmhwnd, expression, 4));
+        Dm()->WriteIntAddr(mmhwnd, nbsq + 2880 + 11, 0, cwid);
+        expression.Format(_T("[[%08x]+2C]"), renW);
+        const DWORD cwid2 = static_cast<DWORD>(Dm()->ReadInt(mmhwnd, expression, 4));
+        Dm()->WriteIntAddr(mmhwnd, nbsq + 2880 + 27, 0, cwid2);
+        expression.Format(_T("[[%08x]+2C]+%08x"), renW, djg * 0x118 + 0x10);
+        const DWORD cwid3 = static_cast<DWORD>(Dm()->ReadInt(mmhwnd, expression, 4));
+        Dm()->WriteIntAddr(mmhwnd, nbsq + 2880 + 19, 0, cwid3);
+        Dm()->WriteIntAddr(mmhwnd, nbsq + 2880 + 35, 0, cwid);
+        Dm()->WriteIntAddr(mmhwnd, nbsq + ZHUBC, 0, nbsq + 2880);
+        const long flagWrite = Dm()->WriteIntAddr(mmhwnd, nbsq + ZHUBB, 0, 1);
+        while (!m_control->IsStopping() &&
+               Dm()->ReadIntAddr(mmhwnd, nbsq + ZHUBB, 4) == 1) {
+            SleepEx(5);
+        }
+        if (gjg == 1) {
+            SleepEx(500 + rand() % 500);
+        } else {
+            SleepEx(gjg);
+        }
+        Dm()->WriteIntAddr(mmhwnd, nbsq + 2880 + 35, 0, -1);
+        return flagWrite;
+    });
 }
 
 bool CTaskThread::NerExist() {
@@ -2952,8 +4866,8 @@ bool CTaskThread::wHaveRide() {
     if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd) return false;
 
     const long targetHwnd = static_cast<long>(reinterpret_cast<INT_PTR>(m_wnd->hWnd));
-    // zqpd is populated during game-memory initialization by dereferencing
-    // [Game.exe + 0x007C6034], so it already holds the ride-list object.
+    // zqpd is populated by dereferencing BagJ (resolved through BAGBP),
+    // so it already holds the ride-list object rather than the global slot.
     const DWORD object = static_cast<DWORD>(jz[TaskMemoryState::zqpd]);
     if (object == 0) return false;
 
@@ -3231,6 +5145,30 @@ DWORD CTaskThread::Read_RWZTC2(DWORD erc, std::vector<DWORD> vzt) {
     return 0;
 }
 
+DWORD CTaskThread::wXunL_Guih(float xx, float yy)
+{
+	tsg[TaskMemoryState::tls1].Format(_T("[[[[%08x]+D95C]+A4]+4]+1C"), jz[TaskMemoryState::CWorldManager]);
+	DWORD dxldj = Dm()->ReadInt(mmhwnd, tsg[TaskMemoryState::tls1], 0);
+	if (dxldj == 0) return 0;
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 0x43, 0, dxldj + 8);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 0x4F, 0, dxldj + 12);
+
+	Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 10, xx);
+	Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 0x13, yy);
+    Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 0x47, xx);
+    Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 0x53, yy);
+    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 108, 0, 0);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTC, 0, jz[TaskMemoryState::Nbsq] + 1510);
+	while (Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTB, 0, 1) == 0) SleepEx(20);
+
+	while (!m_control->IsStopping()) {
+		SleepEx(20);
+		if (Dm()->ReadIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTB, 0) == 0) { break; }
+	}
+    if (Dm()->ReadIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 108, 0) == 1) return 1;
+	return 0;
+}
+
 DWORD CTaskThread::Read_RWZTC2(DWORD erc, DWORD zt) {
     varrou.clear();
     if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd ||
@@ -3268,6 +5206,19 @@ DWORD CTaskThread::Read_RWZTC2(DWORD erc, DWORD zt) {
     return std::find(varrou.begin(), varrou.end(), zt) != varrou.end()
         ? zt
         : 0;
+}
+
+void CTaskThread::wBagJiaoH(DWORD xh1, DWORD xh2)
+{
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1630 + 9, 2, xh1);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1630 + 13, 2, xh2);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0, jz[TaskMemoryState::Nbsq] + 1630);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
+	while (!m_control->IsStopping()) {
+		SleepEx(20);
+		if (Dm()->ReadIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0) == 0) { break; }
+	}
+	return ;
 }
 
 DWORD CTaskThread::Read_RWZTgs() {
@@ -3345,11 +5296,78 @@ int CTaskThread::Read_ATID(DWORD gwdz) {
 int CTaskThread::Read_DTID() {
     if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd) return 0;
 
-    // MYDITUP resolves to the live map object.  Its current map ID is stored
-    // at +0x50, matching the reference expression "[MYDITUP]+50".
-    const DWORD mapObject = static_cast<DWORD>(jz[TaskMemoryState::MyDiTu]);
+    // MYDITUP points at a pointer slot.  The live map object is the
+    // dereferenced slot; the current map ID is object + 0x50.
+    const DWORD mapSlot = static_cast<DWORD>(jz[TaskMemoryState::MyDiTu]);
+    if (!IsPlausibleStatePointer(mapSlot)) return 0;
+
+    const DWORD mapObject = Read_Dw(mapSlot);
     if (!IsPlausibleStatePointer(mapObject)) return 0;
     return static_cast<int>(Read_Dw(mapObject + 0x50));
+}
+
+DWORD CTaskThread::ResolvePlayerActor() {
+    if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd) return 0;
+
+    // 新版客户端：朝向管理器 = [ROLEB]（旧全局 [Game+0x7C5AE8] 更新后为 0）。
+    // Actor = [管理器+0x64]，与 jz[jYcdiz] 槽中的指针一致。
+    const DWORD manager = Read_Dw(static_cast<DWORD>(jz[TaskMemoryState::ROLEB]));
+    if (IsPlausibleStatePointer(manager)) {
+        const DWORD actor = Read_Dw(manager + kPlayerOrientationActorOffset);
+        if (IsPlausibleStatePointer(actor)) return actor;
+    }
+
+    // 旧版：框架已初始化的 jz[jYcdiz] 指向 Actor 槽。
+    const DWORD actorSlot = static_cast<DWORD>(jz[TaskMemoryState::jYcdiz]);
+    if (IsPlausibleStatePointer(actorSlot)) {
+        const DWORD actor = Read_Dw(actorSlot);
+        if (IsPlausibleStatePointer(actor)) return actor;
+    }
+
+    // 旧版兼容：官方客户端分析链 [Game+0x7C5AE8] → +0x64 → Actor。
+    const long targetHwnd = static_cast<long>(reinterpret_cast<INT_PTR>(m_wnd->hWnd));
+    const LONGLONG gameModule = m_dm->GetModuleBaseAddr(targetHwnd, _T("Game.exe"));
+    if (gameModule == 0) return 0;
+
+    const DWORD managerLegacy = Read_Dw(
+        static_cast<DWORD>(gameModule + kPlayerOrientationGlobalRva));
+    if (!IsPlausibleStatePointer(managerLegacy)) return 0;
+
+    const DWORD actorLegacy = Read_Dw(managerLegacy + kPlayerOrientationActorOffset);
+    return IsPlausibleStatePointer(actorLegacy) ? actorLegacy : 0;
+}
+
+bool CTaskThread::Read_PlayerYaw(float& yawRadians) {
+    yawRadians = 0.0f;
+    const DWORD actor = ResolvePlayerActor();
+    if (actor == 0 || !m_dm) return false;
+
+    const float yaw = m_dm->ReadFloatAddr(
+        mmhwnd, static_cast<LONGLONG>(actor) + kPlayerActorYawOffset);
+    if (!std::isfinite(yaw)) return false;
+
+    yawRadians = yaw;
+    return true;
+}
+
+Point2f CTaskThread::Read_PlayerFacingPoint(float distance) {
+    Point2f result{};
+    const DWORD actor = ResolvePlayerActor();
+    if (actor == 0 || !m_dm) return result;
+
+    float yawRadians = 0.0f;
+    if (!Read_PlayerYaw(yawRadians)) return result;
+
+    const float x = m_dm->ReadFloatAddr(
+        mmhwnd, static_cast<LONGLONG>(actor) + kPlayerActorXOffset);
+    const float groundY = m_dm->ReadFloatAddr(
+        mmhwnd, static_cast<LONGLONG>(actor) + kPlayerActorZOffset);
+    if (!std::isfinite(x) || !std::isfinite(groundY)) return result;
+
+    // Client yaw: 0 points +Z, 90 degrees points +X, 270 degrees points -X.
+    result.x = x + std::sin(yawRadians) * distance;
+    result.y = groundY + std::cos(yawRadians) * distance;
+    return result;
 }
 
 int CTaskThread::Read_RWZT(bool qzjc) {
@@ -3439,9 +5457,9 @@ bool CTaskThread::mCanAttack(DWORD zjdz, DWORD Mid)
     const WORD targetType = readWord(static_cast<LONGLONG>(targetData) + kRelationTypeOffset);
     if (selfType > 0x3F || targetType > 0x3F) return false;
 
-    // 008B3FF0 reads a 64x64 inline relation matrix. For the captured sample:
+    // sub_934F20/sub_934F60 read the current build's 64x64 relation matrix.
     // selfType=9, targetType=0x1B, matrix=-160000 and self override=0.
-    constexpr LONGLONG kRelationMatrixRva = 0x007D32F0;
+    constexpr LONGLONG kRelationMatrixRva = 0x007D42F0;
     constexpr LONGLONG kRelationRowStride = 0x110;
     constexpr LONGLONG kRelationRowDataOffset = 0x0C;
     constexpr LONG kAttackableThreshold = -160000;

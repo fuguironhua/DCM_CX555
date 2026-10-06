@@ -1,0 +1,72 @@
+# UTF-8: CE description<TAB>CCEE key<TAB>expected module. Exact name; all matching duplicates.
+包裹打开	WNDOPP	ui_cegui.dll
+种植包裹打开7C/任务F4	WNDOPP	ui_cegui.dll
+NPC对话框打开	WNDOPP	ui_cegui.dll
+第一次传送对话框打开	WNDOPP	ui_cegui.dll
+帮派商店打开	WNDOPP	ui_cegui.dll
+地面包裹位置x+36+105	WNDOPP	ui_cegui.dll
+地面包裹窗口大小x	WNDOPP	ui_cegui.dll
+地面包裹窗口大小y	WNDOPP	ui_cegui.dll
+领取活跃打开	WNDOPP	ui_cegui.dll
+可能是门派 +D0	ROLEP	game.exe
+q跑商领票次数	ROLEP	game.exe
+q人物攻击ID	ROLEP	game.exe
+q人物一层地址	ROLEP	game.exe
+q人物ID	ROLEP	game.exe
+q人物经验 292c金币 2938活力 2940精力 血量 2934 血max 299c 怒气64	ROLEP	game.exe
+q人物活跃 曼陀花朵 2948 丐帮连击 2944	ROLEP	game.exe
+q名字 +6c称号	ROLEP	game.exe
+商人称呼	ROLEP	game.exe
+q人物活跃	ROLEP	game.exe
+寻路规划ecx+0x134	ROLEP	game.exe
+找队伍 门派+30	ROLEP	game.exe
+找队伍2  名字 10	GADUIWP	game.exe
+找队伍2 地图 +8？？	GADUIWP	game.exe
+速度	ROLEP	game.exe
+跟随	ROLEP	game.exe
+x	ROLEP	game.exe
+y	ROLEP	game.exe
+状态采矿8坐骑5摊10	ROLEP	game.exe
+q地图ID XXXX	MYDITUP	game.exe
+q地图ID XXXX   需-176e0	MYDITUP	game.exe
+交易下一个对象ID读取队列	BAGBP	game.exe
+交易下一个对象ID写入队列	BAGBP	game.exe
+交易下一个对象ID附近	BAGBP	game.exe
+交易背包数组 -38	BAGBP	game.exe
+交易封包序号  原15ee8	BAGBP	game.exe
+交易对方金币 -3c	BAGBP	game.exe
+交易自己方金币 -60	BAGBP	game.exe
+交易对方是否确认 -44	BAGBP	game.exe
+交易自己是否确认 -68	BAGBP	game.exe
+仓库数组	BAGBP	game.exe
+仓库金币	BAGBP	game.exe
+q扫荡背包第一格	SAODP	game.exe
+背包数组	BAGBP	game.exe
+背包 购买价格4C-出售+4 数量 58	BAGBP	game.exe
+背包读名称	BAGBP	game.exe
+背包1上限 22ab0  好友 80ae4	BAGBP	game.exe
+跑商商店第一栏	SHANGHP	game.exe
+朋友是否有消息	BAGBP	game.exe
+q宠物血 +44 快乐 +5C	BAGBP	game.exe
+q宠物ID	BAGBP	game.exe
+q宠物出战标志	ROLEP	game.exe
+q宠物出战标志2	ROLEP	game.exe
+q宠物融魂标志1	ROLEP	game.exe
+周围遍历二叉基	ROLEP	game.exe
+走过去采矿捡物ESI	ROLEP	game.exe
+心法二叉	ROLEP	game.exe
+q人物buff个数	ROLEP	game.exe
+地图？？蹴E9 反AA 星222飘105燕EC梦289老一4F二51棋3D野猪E8藏经阁110帮派221	MYDITUP	game.exe
+当前选中的对话框地址	BAGJHP	ceguibase.dll
+选中是否激活	BAGJHP	ceguibase.dll
+NPC窗口名称	RENWP	game.exe
+师门任务描述	RENWP	game.exe
+扩张任务描述	RENWP	game.exe
+摆摊价格	BAGBP	game.exe
+别人摆摊价格	BAGBP	game.exe
+别人摆摊数量	BAGBP	game.exe
+采集包裹标志	BAGBP	game.exe
+采集包裹名字	BAGBP	game.exe
+怪物归属是否自己	ROLEP	game.exe
+善恶背包读数量	BAGBP	game.exe
+善恶背包读名称	BAGBP	game.exe

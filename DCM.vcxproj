@@ -110,6 +110,10 @@
     <ClInclude Include="CTaskHelperYan.h" />
     <ClInclude Include="CTaskManager.h" />
     <ClInclude Include="DCMDlg.h" />
+    <ClInclude Include="WindowTools.h" />
+    <ClInclude Include="TlbbLauncher.h" />
+    <ClInclude Include="TlbbMultiOpenDlg.h" />
+    <ClInclude Include="CeTableUpdater.h" />
     <ClInclude Include="HttpClient.h" />
     <ClInclude Include="TeamServerClient.h" />
     <ClInclude Include="PauseController.h" />
@@ -133,6 +137,10 @@
     <ClCompile Include="CTaskHelperYan.cpp" />
     <ClCompile Include="CTaskManager.cpp" />
     <ClCompile Include="DCMDlg.cpp" />
+    <ClCompile Include="WindowTools.cpp" />
+    <ClCompile Include="TlbbLauncher.cpp" />
+    <ClCompile Include="TlbbMultiOpenDlg.cpp" />
+    <ClCompile Include="CeTableUpdater.cpp" />
     <ClCompile Include="HttpClient.cpp" />
     <ClCompile Include="TeamServerClient.cpp" />
     <ClCompile Include="DCM.cpp" />
@@ -143,21 +151,25 @@
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="DCM.rc" />
+    <ResourceCompile Include="WindowTools.rc" />
   </ItemGroup>
   <ItemGroup>
     <None Include="dm.dll" />
     <None Include="DmReg.dll" />
+    <None Include="config\ce_update_d.lua" />
+    <None Include="config\ce_update_d_names.txt" />
     <None Include="config\全局配置.ini" />
     <None Include="config\人物配置.ini" />
     <None Include="config\升级经验.ini" />
     <None Include="config\游戏配置.ini" />
+    <None Include="config\地图配置.txt" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Target Name="AfterBuild">
     <Copy SourceFiles="$(ProjectDir)dm.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ProjectDir)DmReg.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
     <ItemGroup>
-      <IniFiles Include="$(ProjectDir)config\*.ini" />
+      <IniFiles Include="$(ProjectDir)config\*.ini;$(ProjectDir)config\*.txt;$(ProjectDir)config\ce_update_d.lua" />
     </ItemGroup>
     <Copy SourceFiles="@(IniFiles)" DestinationFolder="$(OutDir)config" SkipUnchangedFiles="true" />
   </Target>

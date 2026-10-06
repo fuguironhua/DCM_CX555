@@ -6,6 +6,7 @@
 #include "structs.h"
 #include "TaskNpcTables.h"
 #include <cstdarg>
+#include <functional>
 #include <limits>
 #include <regex>
 #include <vector>
@@ -72,6 +73,13 @@ protected:
     void DebugLog(const CString& message);
     // Compatibility spelling from the original framework.
     void LogD(LPCTSTR format, ...);
+    static constexpr DWORD kPacketIntervalMs = 300;
+    enum class PacketAction { Other, Move, Skill };
+    bool IsActionAllowed(PacketAction kind);
+    bool DispatchPacketWithInterval(const CString& action,
+                                    const std::function<long()>& writePacket,
+                                    bool traceSend = false,
+                                    PacketAction kind = PacketAction::Other);
     dmsoft* Dm() { return m_dm.get(); }
     const std::shared_ptr<tagWndInfo>& Window() const { return m_wnd; }
     TaskMemoryState& Memory() { return *m_memory; }
@@ -107,6 +115,8 @@ protected:
     static constexpr TaskMemoryState::MamsSlot dztsj = TaskMemoryState::dztsj;
     static constexpr TaskMemoryState::MamsSlot dzbsj = TaskMemoryState::dzbsj;
     static constexpr TaskMemoryState::MamsSlot drwzt = TaskMemoryState::drwzt;
+    static constexpr TaskMemoryState::MamsSlot fbys = TaskMemoryState::fbys;
+    static constexpr TaskMemoryState::MamsSlot dxnjc = TaskMemoryState::dxnjc;
     TaskMemoryStatePtr m_memory;
     AddressArray& jz;
     ExpressionArray& tsg;
@@ -115,6 +125,13 @@ protected:
     MamsArray& Mams;
     BagArray& bag;
     DWORD dwls = 0;
+    // 血祭（宠物技能）状态：由 tCheckXj 填充，供副本任务判断
+    bool m_hasXueJi = false;
+    DWORD m_xjSkillId = 0;
+    // HkWorld 后续实现需设置这两个远程地址；0 表示 Hook 尚未安装。
+    // 写入方先写 ANSI 文本，再置 DWORD 标志为 1；读取方消费后清零。
+    DWORD m_worldMessageFlag = 0;
+    DWORD m_worldMessageText = 0;
     std::shared_ptr<tagWndInfo> m_wnd;
     std::shared_ptr<CThreadControl> m_control;
     tagWndIni m_ini;
@@ -125,6 +142,7 @@ protected:
     std::thread m_thread;
     HWND m_logWindow = nullptr;
 private:
+    bool m_actionStatusesConfigured = false;
     void ThreadMain();
     void EmitFormattedDebugLog(LPCTSTR format, va_list args);
     void EmitDebugLog(const CString& text);
@@ -137,6 +155,21 @@ public:
 
     // Per-thread compatibility containers from the reference project.
     std::vector<DWORD> varrou;
+    std::vector<DWORD> vecrun;
+    std::vector<DWORD> vecskill;
+    // 在副本函数入口创建；return/异常退出时恢复原配置。ID 为自身状态 ID。
+    class ScopedActionStatuses {
+    public:
+        ScopedActionStatuses(CTaskThread& owner, std::vector<DWORD> moveIds,
+                             std::vector<DWORD> skillIds, bool onlyIfUnset = false);
+        ~ScopedActionStatuses();
+        ScopedActionStatuses(const ScopedActionStatuses&) = delete;
+        ScopedActionStatuses& operator=(const ScopedActionStatuses&) = delete;
+    private:
+        CTaskThread& m_owner;
+        std::vector<DWORD> m_moveIds, m_skillIds;
+        bool m_configured;
+    };
     // Working copies of the reference task/NPC tables (BianL.h VRENW / VHUOD).
     std::vector<TaskNpcRewardEntry> VRenw;
     std::vector<TaskNpcActivityEntry> VHuod;
@@ -149,17 +182,43 @@ public:
 
     //---------------------封包+操作----------------------
     int wBenTuXuL2(float xx, float yy);
+    int wBenTuXuL2_Fast(float xx, float yy);
     int wOpenMan(DWORD did);//打开NPC名字
+    int wOpenMan(CString name);//打开NPC名字
     void wXuanZg(DWORD moid);//选择怪物
-    void wUseSk6(DWORD jiid, DWORD moid);//使用技能id,怪物id
+    void wXuanZg2(DWORD moid);//选择怪物id + 判断距离
+    bool wUseSk6(DWORD jiid, DWORD moid, bool basicAttack = false);//已发送返回true；被状态拦截返回false
+    bool wUseSk6(DWORD jiid, Point2f ptx, bool basicAttack = false);//已发送返回true；被状态拦截返回false
+    bool wUseSk6cw(DWORD jiid);//宠物技能：血祭等，沿用当前封包调度器
     void wClickNpc(DWORD djg, DWORD gjg = 1);//点击NPC--序号从1开始  改时间间隔
-	int wPet_Chu(int xuh, int cz);//0出站 1休息
+	void wClickNpc(CString cname);//点击NPC--序号从1开始  改时间间隔
+	void wClickNpcDJ(DWORD djg, DWORD gjg = 1);//点击大劫大难专用
+
+	int  wPet_Chu(int xuh, int cz);//0出站 1休息
     bool wUseBag2();//人物
 	void wUseBag2(int zl);
 	bool wUseBag2x(int xuh);//人物
-
+    int  wDui_Gens(int xuh);//队员跟随--1跟随 0休息
+    void wSendTeamChat(const CString& message);//队伍频道发言，预留实现；message为完整消息。
 
     void mLua_Dostr(CString csc);//执行lua脚本--限100字节
+    void Hk_Paos(int kg);//Hook 消息  跑商
+    void HkWorld(int kg);//Hook 消息开关：1 打开，0 关闭（实现待补）
+    bool ReadWorldMessage(CString& text);//消费 HkWorld 消息，未安装时返回 false
+    CString qHksxwz(CString csc);//取杀星文本末尾的 _编号}
+    void wPsGou(CString cname);//跑商购买
+    void wPsChu(DWORD djg);//跑商购买
+	void wLyGou();//跑商洛阳购买
+	void wLyChu(int xuh);//跑商洛阳出售
+	int  WP_CS(int xuh);//普通商店出售包裹物品
+
+	int wRenw_jie(DWORD npcid, DWORD rwid);//接任务
+	int wRenw_fan(DWORD rwid);//放弃任务
+	int wRenw_jix(DWORD npcid, DWORD rwid);//继续任务
+	int wRenw_wan(DWORD npcid, DWORD rwid);//完成任务--无奖励选择的
+    DWORD wXunL_Guih(float xx,float yy);//寻路规划
+    void wBagJiaoH(DWORD xh1, DWORD xh2);//背包交换
+
 
     //---------------------遍历技能----------------------
 	void  BianAr(DWORD Erc);//遍历技能
@@ -168,11 +227,15 @@ public:
 
     //---------------------遍历----------------------
 	void NerbAr(DWORD Erc);//遍历周围所有
-	int  NerbMonst2(DWORD Erc, regex txt_reg);//返回vector
+	int  NerbMonst2(DWORD Erc, regex txt_reg, bool logSummary = true);//返回vector
+	// Scan nearby entities and return only targets the current player can attack.
+	std::vector<Monst> FindAttackableMonsters(DWORD Erc, regex txt_reg,
+	                                           float distance = 40.0f,
+	                                           bool logSummary = false);
 	int  NerbMonst3(DWORD Erc, int leix);//返回vector  0怪物 
 	int  NerbMonst3(DWORD Erc, int leix, CString txt_reg);//返回vector
 	int  NerbXian(DWORD Erc, CString txt_reg);//陷阱
-	int  NerbMonst222(DWORD Erc, regex txt_reg);//定点返回vector + 不要血量
+	int  NerbMonst222(DWORD Erc, regex txt_reg, bool logSummary = true);//定点返回vector + 不要血量
 	void NearbyMonst5(DWORD Erc);//打图用
 	bool NerExist();
 	bool NerExist(DWORD Mid);//是否在附近
@@ -224,12 +287,19 @@ public:
 	int Read_ATID();//读攻击ID
 	int Read_ATID(DWORD gwdz);//读攻击ID
 
+    // 人物朝向：优先项目 jz[jYcdiz] 的 Actor，后备 [[Game.exe+0x7C5AE8]+0x64]；Yaw = Float[Actor+0x4C]。
+    bool Read_PlayerYaw(float& yawRadians);
+    // 读取朝向和自身 X/Z 坐标，返回朝向前方 distance 距离的点。
+    Point2f Read_PlayerFacingPoint(float distance = 19.6f);
+
 
     //---------------------窗口----------------------
     // 在 CEGUI WindowManager 的红黑树中按注册名查找窗口对象。
     // 返回值为节点 + 0x28 中保存的 Window*，未找到时返回 0。
     DWORD FindCeguiWindowByName(const CString& name);
     int IsWndGuot();//过图窗口是否打开
+    int IsWndOpen(int xuh);//window open
+    int IsWndOpen2(DWORD ckdx);//window open
     DWORD cGetTime();//获取当前时间
     DWORD cGetNetIc();//获取当前网络图标序号
     // xuh is the zero-based item index in BagJ->[*+0x22C00].
@@ -240,6 +310,15 @@ public:
     int cRead_Identify(DWORD xuh);//读取物品鉴定
     int cRead_Bind(DWORD xuh);//读取物品绑定
     CString cRead_CeguiText(DWORD xuh);
+    // 读取聊天面板「队伍」频道最后一条消息；outMessage=冒号后的内容。
+    // outSender 可选，返回发送者名字。返回 true=读到队伍消息。
+    // 内部自带节流轮询+缓存：1.5 秒内的重复调用零开销直接返回缓存，
+    // 打怪等高频循环里可放心调用；长时间没收到新队伍消息时返回缓存中的旧值。
+    bool ReadLastTeamChat(CString& outMessage, CString* outSender = nullptr);
+    // 缓存最后更新时间（GetTickCount），可用于判断消息新旧。
+    DWORD GetLastTeamChatTick() const;
+    // 换角色/重新登录后清空缓存。
+    void ResetLastTeamChat();
 
 
     //---------------------周末活动----------------------
@@ -248,6 +327,9 @@ public:
     //DWORD mRead_Tuixh();//读取推荐序号
     PaoShangRecommendData mRead_TuiJg();//读取推荐价格、物品ID和目的地
     CString mGet_Kjda(CString cTim);//获取科举答案
+    // 读取科举题目：题干只保留到第一个问号（U+FF1F），再用 mGet_Kjda 查 CSV 答案。
+    // 返回 true=读到题目；outAnswer=匹配到的答案（CSV 没匹配到则为空）。
+    bool ReadKejuQuestion(CString& outQuestion, CString& outAnswer);
 
 
     //---------------------跑商--------------------
@@ -256,6 +338,11 @@ public:
 
     //---------------------任务--------------------
     CString Read_NpcT(int xuh = 0);//读npc对话
+	int mRe_Renx(DWORD rwid);//取任务序号
+	int mRe_Renx(CString cname);//取任务序号
+	int mRenw_wc(DWORD rwxh, int xuh = 0);//判断任务是否完成 0是任务总体完成 1开始是怪物
+	int mRenw_jie(size_t xuh);//按 VRenw 表：寻路->开NPC->接任务
+	int mRenw_jiao(size_t xuh);//按 VRenw 表：开NPC->交任务
 
 
     //---------------------宠物+物品----------------------
@@ -266,18 +353,65 @@ public:
 	int Read_CWSkillID(int xuh, int skillIndex);//读取宠物技能ID
 	bool Read_CWHaveSkill(int xuh, int skillId);//判断宠物是否拥有指定技能
 	int Read_CWXueJi(int xuh);//0=无，1=血祭，2=高级血祭
+	void tCheckXj();//检查血祭：确保宠物出战并读取宠物技能，结果存入 m_hasXueJi/m_xjSkillId
 	BagItem Read_BagX(int zl);//取加血物品位置
 	BagItem Read_BagN3(CString Nam, int djg, int zl);//取物品位置银票
+    int PAND_WPLX2(int xuh);//普通商店整理：-100空，1存，2留，3卖，4使用
+    CString Read_BagCr(int zl);//读装备制造者名字
 
+	//---------------------寻路----------------------
+	void wBenTuXuL3z(float xx, float yy);//带方向副本用 监控停止 准确位置
+	void wBenTuXuL3f(float xx, float yy);//带方向副本用 监控停止
+	void wBenTuXuL3fy(float xx, float yy);//带方向副本用 监控停止--验证码
+	int wBenTuXuL33(float xx, float yy, int fx);//带方向副本用距离近--8个方向
+	void wBenTuXuL34(float xx, float yy, int jl, int fx);//带方向副本用杀星--16个方向
+	void wBenTuXuL35(float xx, float yy);//反贼
+
+	int wKuaTuXL(float xx, float yy, int dtid);//
+	int wKuaTuXL33(float xx, float yy, int dtid);//
+	void wBenTuXuL7(int mos, float xx, float yy, int szq = 1);//半圆寻路--0 1-4象限-- 1  2-1象限
+
+
+	//---------------------队伍----------------------
+	bool Read_Sfem();//判断队伍是否有峨眉
+	int Read_TeamC();//读队伍数量
+	int Read_TeamDtId(int xuh);//读队员地图
+	CString Read_DuiwMz(int xuh);//读名字
+	DWORD   Read_DuiwId(int xuh);//读ID
+	DWORD Read_Ziji();//读自己位置序号
+	Point2f Read_DuiwZb(int xuh);//读坐标
+	DWORD  Read_Dmax(int xuh);//读最大血
+	int Read_NeedJx2(DWORD diz, float bfb, DWORD rid);//读需要加血
+	int Read_MoBelo(DWORD diz, std::vector<DWORD>& vddwid);//读怪物归属是否自己队伍
+	bool ReadServerTime(std::int64_t& unixSeconds);	// 读取已同步到客户端的服务器 Unix 时间（秒），不依赖时间窗口。
+
+    //---------------------队伍----------------------
+	ZuoBi* Read_Datu();//读打图及跑
+	void UpdateBag();//更新背包
 
 
 private:
     DWORD ReadCeguiNumericText(DWORD window);
     CString ReadCeguiText(DWORD window);
+    bool ReadTeamChatFromWindow(CString& outMessage, CString* outSender);
+    bool ReadLastTeamFromPacketRing(CString& outMessage, CString* outSender);
+    HANDLE EnsureGameProcess();
+    bool ReadGameMemory(DWORD address, void* buffer, size_t size);
+    DWORD FindNetPacketObject();
     static CString ExtractPaoShangDestination(const CString& text);
     bool ReadNearbyPlayerPosition(Point2f& position);
+    DWORD ResolvePlayerActor();
     DWORD CopyNearbyDescriptor(DWORD node, CString& expression);
     static float NearbyDistance(const Point2f& from, const Point2f& to);
+
+    CString m_lastTeamChatMessage;
+    CString m_lastTeamChatSender;
+    DWORD m_lastTeamChatTick = 0;
+    DWORD m_lastTeamChatPollTick = 0;
+    HANDLE m_gameProcess = nullptr;
+    DWORD m_gameProcessPid = 0;
+    DWORD m_netObject = 0;
+    DWORD m_netObjectTick = 0;
 
     float m_nearbyDistanceLimit = (std::numeric_limits<float>::max)();
     Point2f m_nearbyReferencePosition{};

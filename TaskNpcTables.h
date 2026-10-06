@@ -38,6 +38,15 @@ using TaskNpcActivityEntry = std::tuple<CString, DWORD, Point2f, CString>;
     {_T("\u8ba8\u4f10\u71d5\u5b50\u575e"), 4, Point2f{70.5f, 119.0f}, _T("\u674e\u7eb2")} \
 }
 // ---------------------------------------------------------------------------
+// VRENW 槽位：参考项目 BianL.h 的 F_* 枚举下标，副本任务用它取任务表项。
+// ---------------------------------------------------------------------------
+enum TaskRewardSlot : size_t {
+    F_LY = 0,  // 一个都不能跑（副本老一, 任务 0xC3B4, 地图 0x4F）
+    F_LE = 1,  // 除害（副本老二, 任务 0xC3B5, 地图 0x51）
+    F_LS = 2,  // 剿匪（副本老三, 任务 0xC3B6, 地图 0x50）
+};
+
+// ---------------------------------------------------------------------------
 // Skill tables, ported from the reference project (DCM_CX5 BianL.h).
 //   L_*      : reference Fruit13 skill kinds
 //   VSKILL   : one row per menpai -> default attack skills (id, level, 0, kind, name)
