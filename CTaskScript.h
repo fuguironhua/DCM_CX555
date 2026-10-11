@@ -3,6 +3,7 @@
 #include "CNearby.h"
 #include "TaskSchedule.h"
 #include "TaskMemoryState.h"
+#include <afxmt.h>  // For CSingleLock and CMutex
 
 class CTaskScript final : public CNearby {
 public:
@@ -58,6 +59,11 @@ protected:
 private:
     bool InitializeGameState();
     void RunTaskStub(LPCTSTR functionName, LPCTSTR taskName);
+
+    // 跑商互斥体相关方法
+    bool mHzkhct(const CString& bangpaiName);  // 获取服务器互斥体
+    void mFzkhct(const CString& bangpaiName);  // 释放服务器互斥体
+
     TaskSchedulePtr m_schedule;
     std::uint64_t m_seenGeneration = 0;
     size_t m_taskIndex = 0;
@@ -65,6 +71,7 @@ private:
     bool m_sequenceComplete = false;
     std::atomic<bool> m_testRequested{ false };
     std::atomic<int> m_routeRequest{ -1 };
+    CMutex m_mutex2;  // 本地互斥体，用于跑商等需要窗口互斥的场景
 
 
     unsigned char  install_veh_shellcode[50] = { 0x60,0x64,0xA1,0x24,0x00,0x00,0x00,0x3D,0x11,0x11,0x11,0x11,0x75,0x21,0x83,0x3D,0x11,0x11,0x11,0x11,0x01,0x74,0x18,0x68,0x11,0x22,0x33,0x44,0x6A,0x01,0xB8,0x55,0x66,0x77,0x88,0xFF,0xD0,0xC7,0x05,0x11,0x11,0x11,0x11,0x01,0x00,0x00,0x00,0x61,0xFF,0xE1 };

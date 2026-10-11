@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "CTaskThread.h"
 #include "CWndManager.h"
+#include "TeamServerClient.h"
 #include <cmath>
 #include <cstdarg>
 #include <cstring>
@@ -123,7 +124,7 @@ constexpr DWORD kPetSkillSlotCount = 13;
 constexpr DWORD kPetXueJiSkillId = 696;
 constexpr DWORD kPetGaoJiXueJiSkillId = 697;
 constexpr DWORD kPetOutStatusOffset = 0x2A04;   // cwcz1
-constexpr DWORD kPetSoulOffset = kPetOutStatusOffset - 380;
+constexpr DWORD kPetSoulOffset = kPetOutStatusOffset - 388;
 
 constexpr DWORD kMinimumUserAddress = 0x10000;
 constexpr DWORD kMaximumStateEntries = 0x10000;
@@ -1741,10 +1742,11 @@ void CTaskThread::ThreadMain() {
     if (comInitialized) {
         m_dm = std::make_unique<dmsoft>();
         m_dm->m_pWnd = m_wnd.get();
-        m_dm->SetShowErrorMsg(0);
-        m_ready.store(m_dm != nullptr);
+        const bool dmValid = m_dm->IsValid();
+        if (dmValid) m_dm->SetShowErrorMsg(0);
+        m_ready.store(dmValid);
         DebugLog(m_ready.load() ? _T("dmsoft created") : _T("dmsoft creation failed"));
-        if (m_dm && OnEventThreadStart()) {
+        if (dmValid && OnEventThreadStart()) {
             while (OnEventThreadRun()) {
             }
         }
@@ -2444,8 +2446,8 @@ bool CTaskThread::ReadServerTime(std::int64_t& unixSeconds)
     const DWORD game = static_cast<DWORD>(m_dm->GetModuleBaseAddr(targetHwnd, _T("Game.exe")));
     if (game < kMinimumUserAddress) return false;
 
-    // 0.08.2812: module RVAs of the synchronized clock state.
-    constexpr DWORD kTimeSystemGlobalRva = 0x007CF464;
+    // 0.08.3209: synchronized clock global used by DataPool:LuaGetCurrentServerTime().
+    constexpr DWORD kTimeSystemGlobalRva = 0x007CF4BC;
     constexpr DWORD kServerEpochLowOffset = 0x6DDF0;
     constexpr DWORD kServerEpochHighOffset = 0x6DDF4;
     constexpr DWORD kSyncTickOffset = 0x6DDF8;
@@ -3009,6 +3011,126 @@ DWORD CTaskThread::mRead_BangZw()
 
     // The original switch subtracts two and accepts eight cases (2..9).
     return rank >= 2 && rank <= 9 ? rank : 0;
+}
+
+int CTaskThread::mYanzm(bool& cxjs, bool zjcsj)
+{
+    (void)cxjs; // The reference implementation does not change this parameter.
+    const auto active = [this]() {
+        return m_control && !m_control->IsStopping() && m_ready.load() &&
+               Dm() && m_wnd && m_wnd->hWnd && WaitIfPaused();
+    };
+    if (!m_memory || !active()) return 0;
+
+    std::unique_lock<std::mutex> verificationLock(m_memory->verificationMutex, std::defer_lock);
+    while (!verificationLock.try_lock()) {
+        if (!active()) return 0;
+        SleepEx(50);
+    }
+    if (!active() || m_memory->verificationHandled) return 0;
+
+    const auto findClient = [this](long x1, long y1, long x2, long y2,
+                                   LPCTSTR firstColor, LPCTSTR offsetColor, double sim) {
+        const CRect area = ToScreen(CRect(x1, y1, x2, y2));
+        return Dm()->FindMultiColorE(area.left, area.top, area.right, area.bottom,
+                                    firstColor, offsetColor, sim, 0);
+    };
+    const LPCTSTR verifyColor = _T("677d19-101010");
+    const LPCTSTR verifyOffsets = _T("5|6|c7b41d-101010,2|13|c7b414-101010,10|0|c7b414-101010,12|5|c7b414-101010,19|2|b6b41d-101010,18|11|b6b419-101010,30|0|c7b414-101010,31|12|c7a322-101010");
+    const LPCTSTR verifyColor2 = _T("c7b414-101010");
+    const LPCTSTR verifyOffsets2 = _T("1|6|c7b41d-101010,-2|13|c7b414-101010,6|-1|c7b419-101010,10|13|c7b414-101010,15|2|b6b41d-101010,26|0|c7b414-101010,23|6|c7b414-101010,27|12|c7a322-101010");
+    const LPCTSTR verifyColor3 = _T("50382e");
+    const LPCTSTR verifyOffsets3 = _T("0|337|50382e,334|338|50382e,335|337|50382e,335|0|50382e,334|-1|50382e,1|0|ffffff,1|337|ffffff,334|337|ffffff,334|0|ffffff");
+    const LPCTSTR phoneColor = _T("fdeb78");
+    const LPCTSTR phoneOffsets = _T("2|10|fdeb78,9|10|fdeb78,21|0|fdeb78,16|10|fdeb78,34|0|fdeb78,34|6|fdeb78,40|0|fdeb78,48|9|fdeb78");
+
+    CString serverUrl = m_ini.serverUrl;
+    serverUrl.Trim();
+    CTeamServerClient server(serverUrl, 2000);
+    const auto notify = [&](LPCTSTR command) {
+        if (serverUrl.IsEmpty()) {
+            LogD(_T("mYanzm: %s skipped; server address is empty"), command);
+            return CString();
+        }
+        return server.SendOnlineCommand3(command, tsg[TaskMemoryState::m_Djxh], m_wnd->wndIp);
+    };
+
+    CString phone = findClient(458, 386, 564, 410, phoneColor, phoneOffsets, 0.99);
+    if (zjcsj) {
+        if (phone != _T("-1|-1")) {
+            m_memory->verificationHandled = true;
+            const CString response = notify(_T("SZCC"));
+            LogD(_T("mYanzm: phone verification found, response=%s"), response.GetString());
+            do {
+                SleepEx(2000);
+                if (!active()) break;
+                phone = findClient(458, 386, 564, 410, phoneColor, phoneOffsets, 0.99);
+            } while (phone != _T("-1|-1"));
+            notify(_T("WBCC"));
+        }
+        return 0; // Keep the reference phone-only return convention.
+    }
+
+    CString verify = findClient(492, 197, 537, 224, verifyColor, verifyOffsets, 0.9);
+    CString cef = Dm()->EnumWindow(mmhwnd, _T("CEF_Control_Example"), _T("CEF_Control_Example"), 1);
+    CString verify3 = findClient(330, 180, 700, 580, verifyColor3, verifyOffsets3, 0.98);
+    const bool found = verify != _T("-1|-1") || !cef.IsEmpty() ||
+                       phone != _T("-1|-1") || verify3 != _T("-1|-1");
+    if (found) {
+        if (phone != _T("-1|-1")) {
+            const CString configPath = tsg[TaskMemoryState::workdir] + _T("/人物配置.ini");
+            const CString phoneInfo = Dm()->ReadIni(_T("RWSJ"), tsg[TaskMemoryState::m_Name], configPath);
+            LogD(_T("SJXH: %s"), phoneInfo.GetString());
+        } else {
+            m_memory->verificationHandled = true;
+        }
+
+        const CString response = notify(_T("SZCC"));
+        LogD(_T("mYanzm: verification found: color=%s cef=%s response=%s"),
+             verify.GetString(), cef.GetString(), response.GetString());
+        if (!cef.IsEmpty()) {
+            while (active() && !Dm()->EnumWindow(mmhwnd, _T("CEF_Control_Example"),
+                                                _T("CEF_Control_Example"), 1).IsEmpty()) {
+                SleepEx(1000);
+            }
+        }
+
+        if (active()) {
+            CString verify2;
+            do {
+                SleepEx(2000);
+                if (!active()) break;
+                verify = findClient(492, 197, 537, 224, verifyColor, verifyOffsets, 0.9);
+                verify2 = findClient(492, 197, 537, 224, verifyColor2, verifyOffsets2, 0.9);
+                verify3 = findClient(330, 180, 700, 580, verifyColor3, verifyOffsets3, 0.98);
+                phone = findClient(458, 386, 564, 410, phoneColor, phoneOffsets, 0.99);
+            } while (verify != _T("-1|-1") || verify2 != _T("-1|-1") ||
+                     phone != _T("-1|-1") || verify3 != _T("-1|-1"));
+        }
+        // Balance the notification even when the user stops the waiting task.
+        notify(_T("WBCC"));
+        if (!active()) return 0;
+        SleepEx(1000);
+        if (!active()) return 0;
+
+        const CRect captureArea = ToScreen(CRect(300, 160, 720, 610));
+        Dm()->Capture(captureArea.left, captureArea.top, captureArea.right, captureArea.bottom, _T("test11.png"));
+        // Keep the reference post-verification capie_cef cleanup and its screen coordinates.
+        if (Dm()->FindMultiColorE(769, 396, 1133, 585, _T("ffffff"),
+            _T("14|75|ffffff-260801,134|31|ffffff,124|4|ffffff,93|82|ffffff,146|82|ffffff,36|82|ffffff,65|32|ffffff"),
+            0.95, 0) != _T("-1|-1")) {
+            const CString windows = Dm()->EnumWindow(0, _T("capie_cef.exe"), _T("capie_cef.exe"), 1 + 16);
+            if (!windows.IsEmpty()) {
+                const long pid = Dm()->GetWindowProcessId(_ttol(windows));
+                if (pid > 0) {
+                    Dm()->TerminateProcess(pid);
+                    LogD(_T("mYanzm: capie_cef cleanup pid=%ld"), pid);
+                }
+            }
+        }
+    }
+    m_memory->verificationCheckTick = GetTickCount();
+    return found ? 1 : 0;
 }
 
 void CTaskThread::Hk_Paos(int kg)

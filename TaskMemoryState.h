@@ -119,9 +119,13 @@ struct TaskMemoryState {
     CString lastPacketAction;
     // Reference wPet_Chu cooldown, shared by the worker threads of this window.
     DWORD lastPetActionTick = 0;
+    // Reference m_csyz / gf[cyzm] / fzjsy5, shared by this window's workers.
+    std::mutex verificationMutex;
+    bool verificationHandled = false; // Original latch: reset at initialization or by the task.
+    DWORD verificationCheckTick = 0;
 
     void BeginInitialization() {
-        std::scoped_lock lock(readyMutex, packetMutex);
+        std::scoped_lock lock(readyMutex, packetMutex, verificationMutex);
         addresses.fill(0);
         expressions = {};
         windowAddresses.fill(0);
@@ -140,6 +144,8 @@ struct TaskMemoryState {
         hasPacketTick = false;
         lastPacketAction.Empty();
         lastPetActionTick = 0;
+        verificationHandled = false;
+        verificationCheckTick = 0;
     }
 
     void FinishInitialization(bool success) {

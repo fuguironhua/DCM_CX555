@@ -1737,7 +1737,11 @@ bool ComputeSlider2MoveX(const CaptchaChallenge& challenge, Slider2Result& resul
 
     Gdiplus::GdiplusStartupInput startupInput;
     ULONG_PTR token = 0;
-    if (Gdiplus::GdiplusStartup(&token, &startupInput, nullptr) != Gdiplus::Ok) return true;
+    if (Gdiplus::GdiplusStartup(&token, &startupInput, nullptr) != Gdiplus::Ok) {
+        if (challenge.hasSliderAttr) return true;
+        error = _T("slider: gdiplus startup failed");
+        return false;
+    }
 
     IStream* stream = ::SHCreateMemStream(challenge.backgroundImage.data(),
                                           static_cast<UINT>(challenge.backgroundImage.size()));

@@ -1,5 +1,9 @@
 ﻿#pragma once
 #include "framework.h"
+#include <memory>
+
+// Forward declaration
+class CTeamServerClient;
 
 struct tagWndInfo {
     int id = 0;
@@ -7,6 +11,10 @@ struct tagWndInfo {
     CString title;
     CString process;
     RECT rect{ 0, 0, 0, 0 };
+
+    // 跑商互斥体相关字段
+    std::shared_ptr<CTeamServerClient> teamClient;  // 服务器通信客户端
+    CString wndIp;  // 本地标识地址（用于互斥体识别）
 };
 
 struct Point2f {

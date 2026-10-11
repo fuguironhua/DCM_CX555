@@ -334,6 +334,7 @@ public:
 
     //---------------------跑商--------------------
     DWORD mRead_BangZw();//读取帮派职位
+    int mYanzm(bool& cxjs, bool zjcsj = false);//验证码；zjcsj=true仅检查手机验证
 
 
     //---------------------任务--------------------

@@ -13,40 +13,40 @@ namespace {
 // These are the CX5 offsets used by the reference constructor. They are
 // deliberately kept as data in the new per-window state instead of being
 // process-wide globals.
-constexpr LONGLONG kRolePointerOffset = 3216155;       // ROLEP
-constexpr LONGLONG kBagPointerOffset = 3209417;        // BAGBP
-constexpr LONGLONG kMapPointerOffset = 3332793;        // MYDITUP
-constexpr LONGLONG kRoleWorkOffset = 2089660;          // RENWP
-constexpr LONGLONG kRoleErcOffset = 1611575;           // RENERCP
-constexpr LONGLONG kHookCodeOffset = 3419574;          // HHKK3P
-constexpr LONGLONG kLuaOffset = 3735205;               // LUAP
-constexpr LONGLONG kBagSplitOffset = 89754;             // FENGBP
-constexpr LONGLONG kMonsterFenOffset = 1654297;        // MONSTFENP
-constexpr LONGLONG kSleepOffset = 3152981;             // KESLEEPP
-constexpr LONGLONG kGetTickOffset = 3475897;           // KEGETTIP
-constexpr LONGLONG kLuaDoStringOffset = 2753850;       // GALUADOSP
-constexpr LONGLONG kGameThreadOffset = 3148575;        // GAZHANTP
-constexpr LONGLONG kSendOffset = 3897330;              // GAWSENDP
-constexpr LONGLONG kTerminateThreadOffset = 3149874;   // KETERMTP
-constexpr LONGLONG kMapTransitionOffset = 1890676;     // KUATUXLP
-constexpr LONGLONG kTeamOffset = 541557;               // GADUIWP
-constexpr LONGLONG kDebugOffset = 3386981;             // GADEBUGP
-constexpr LONGLONG kStringOffset = 2754102;            // GSTRSTRP
+constexpr LONGLONG kRolePointerOffset = 3216635;       // ROLEP
+constexpr LONGLONG kBagPointerOffset = 3209849;        // BAGBP
+constexpr LONGLONG kMapPointerOffset = 3333305;        // MYDITUP
+constexpr LONGLONG kRoleWorkOffset = 2089596;          // RENWP
+constexpr LONGLONG kRoleErcOffset = 1611047;           // RENERCP
+constexpr LONGLONG kHookCodeOffset = 3420342;          // HHKK3P
+constexpr LONGLONG kLuaOffset = 3735957;               // LUAP
+constexpr LONGLONG kBagSplitOffset = 89674;             // FENGBP
+constexpr LONGLONG kMonsterFenOffset = 1653545;        // MONSTFENP
+constexpr LONGLONG kSleepOffset = 3152901;             // KESLEEPP
+constexpr LONGLONG kGetTickOffset = 3475609;           // KEGETTIP
+constexpr LONGLONG kLuaDoStringOffset = 2754090;       // GALUADOSP
+constexpr LONGLONG kGameThreadOffset = 3148495;        // GAZHANTP
+constexpr LONGLONG kSendOffset = 3897970;              // GAWSENDP
+constexpr LONGLONG kTerminateThreadOffset = 3149794;   // KETERMTP
+constexpr LONGLONG kMapTransitionOffset = 1889684;     // KUATUXLP
+constexpr LONGLONG kTeamOffset = 541893;               // GADUIWP
+constexpr LONGLONG kDebugOffset = 3387509;             // GADEBUGP
+constexpr LONGLONG kStringOffset = 2754342;            // GSTRSTRP
 constexpr LONGLONG kTaskHookOffset = 2541031;           // HKRWZTP
-constexpr LONGLONG kShopOffset = 3536892;              // SHANGHP
-constexpr LONGLONG kActivityOffset = 672682;           // HUOYP
-constexpr LONGLONG kSweepOffset = 645410;              // SAODP
-constexpr LONGLONG kKeyInputOffset = 3149224;          // SHIJEP
-constexpr LONGLONG kMemoryCopyOffset = 5874878;        // MEMCP
-constexpr LONGLONG kRoleNameOffset = 2096136;          // RENMSP
-constexpr LONGLONG kAttackNumberOffset = -8716288;     // ATTNUMP
+constexpr LONGLONG kShopOffset = 3536556;              // SHANGHP
+constexpr LONGLONG kActivityOffset = 673018;           // HUOYP
+constexpr LONGLONG kSweepOffset = 645746;              // SAODP
+constexpr LONGLONG kKeyInputOffset = 3149144;          // SHIJEP
+constexpr LONGLONG kMemoryCopyOffset = 5874958;        // MEMCP
+constexpr LONGLONG kRoleNameOffset = 2096072;          // RENMSP
+constexpr LONGLONG kAttackNumberOffset = -3604480;     // ATTNUMP
 constexpr LONGLONG kBufferClearOffset = 2543479;       // BUFXP
-constexpr LONGLONG kWindowBaseOffset = 1124496;        // WPBDP
-constexpr LONGLONG kSweepDetailOffset = 148129;        // SAODDP
-constexpr LONGLONG kWindowOpenOffset = 312923;         // WNDOPP
+constexpr LONGLONG kWindowBaseOffset = 1125552;        // WPBDP
+constexpr LONGLONG kSweepDetailOffset = 148033;        // SAODDP
+constexpr LONGLONG kWindowOpenOffset = 312859;         // WNDOPP
 constexpr LONGLONG kSceneHeightOffset = 625840;         // SHIHP
 constexpr LONGLONG kBagHelperOffset = 518688;           // BAGJHP
-constexpr LONGLONG kMapCheckOffset = 807856;           // GAXUNLUGP
+constexpr LONGLONG kMapCheckOffset = 807808;           // GAXUNLUGP
 
 bool ShouldUseRoute3(const CString& route) {
     const int separator = route.ReverseFind(_T('-'));
@@ -58,18 +58,18 @@ bool ShouldUseRoute3(const CString& route) {
 }
 
 // Retained offsets for task paths that are not wired into this framework yet.
-constexpr LONGLONG kF1Offset = -8716286;               // F1FP
-constexpr LONGLONG kRoleEcxOffset = 1097393;            // RENWECXP
-constexpr LONGLONG kLocalMoveOffset = 1075019;          // BENTUXLP
+constexpr LONGLONG kF1Offset = -3604478;               // F1FP
+constexpr LONGLONG kRoleEcxOffset = 1098465;            // RENWECXP
+constexpr LONGLONG kLocalMoveOffset = 1076091;          // BENTUXLP
 constexpr LONGLONG kSelectTargetOffset = 6093535;       // XZZTP
-constexpr LONGLONG kLocalMove2Offset = -8716286;        // BENTUXL2P
-constexpr LONGLONG kRunOpenOffset = -8716278;           // RUNOPENP
-constexpr LONGLONG kSelectOffset = -8716286;            // XUANP
-constexpr LONGLONG kSkillOffset = 1014306;              // SKILLP
-constexpr LONGLONG kUseBagOffset = -8716274;            // USEBAGP
-constexpr LONGLONG kMapCheckCallOffset = -8716276;      // GAXUNLUCP
-constexpr LONGLONG kLocalMove3Offset = 1850058;         // BENTUXL3P
-constexpr LONGLONG kWindowDetailOffset = 3650544;       // WPJDP
+constexpr LONGLONG kLocalMove2Offset = -3604478;        // BENTUXL2P
+constexpr LONGLONG kRunOpenOffset = -3604470;           // RUNOPENP
+constexpr LONGLONG kSelectOffset = -3604478;            // XUANP
+constexpr LONGLONG kSkillOffset = 1015826;              // SKILLP
+constexpr LONGLONG kUseBagOffset = -3604466;            // USEBAGP
+constexpr LONGLONG kMapCheckCallOffset = -3604468;      // GAXUNLUCP
+constexpr LONGLONG kLocalMove3Offset = 1849082;         // BENTUXL3P
+constexpr LONGLONG kWindowDetailOffset = 3650288;       // WPJDP
 constexpr LONGLONG kCeguiFAOffset = 250155;             // CEFAP
 constexpr LONGLONG MANAGEP = 0x24BD3C;           // MANAGEP（CEGUIBase.dll 偏移，2026-09-17 更新后实测仍有效）
 constexpr LONGLONG WORLDMANAP = 0x7C6A7C;
@@ -561,9 +561,10 @@ bool CTaskScript::InitializeGameState() {
     const CString characterConfigPath =
         resolveConfigPath(L"人物配置.ini");
 
+    const CString machineConfigPath = resolveConfigPath(L"全局配配.ini");
     tsg[TaskMemoryState::m_Djxh] = Dm()->ReadIni(
-        _T("窗口"), _T("本地序号"),
-        globalConfigPath.GetString());
+        _T("窗口"), _T("本机序号"), machineConfigPath.GetString());
+    tsg[TaskMemoryState::m_Djxh].Trim();
     if (tsg[TaskMemoryState::m_Djxh].IsEmpty()) {
         tsg[TaskMemoryState::m_Djxh] = _T("NULL");
     }
@@ -604,7 +605,23 @@ bool CTaskScript::InitializeGameState() {
         myNamls.GetString(), _T("mmwp"),
         characterConfigPath.GetString());
 
-    if (tsg[TaskMemoryState::luxi].GetLength() < 6) {
+    // The reference mutex protocol identifies the owner by character name.
+    CString serverUrl = m_ini.serverUrl;
+    serverUrl.Trim();
+    m_wnd->teamClient.reset();
+    m_wnd->wndIp = tsg[TaskMemoryState::m_Name];
+    m_wnd->wndIp.Trim();
+    if (!serverUrl.IsEmpty()) {
+        m_wnd->teamClient = std::make_shared<CTeamServerClient>(serverUrl, 2000);
+        DebugLog(_T("mutex client ready: server=%s owner=%s"),
+                 serverUrl.GetString(), m_wnd->wndIp.GetString());
+    } else {
+        DebugLog(_T("mutex client skipped: server address is empty"));
+    }
+
+    const bool canReportOnline = tsg[TaskMemoryState::m_Djxh] != _T("NULL") &&
+                                 tsg[TaskMemoryState::m_Name] != _T("NULL");
+    if (canReportOnline && tsg[TaskMemoryState::luxi].GetLength() < 6) {
         CTeamServerClient server(m_ini.serverUrl, 2000);
         const CString response = server.SendOnlineCommand3(
             _T("luxi"),
@@ -635,6 +652,18 @@ bool CTaskScript::InitializeGameState() {
         } else {
             DebugLog(_T("server luxi query failed: %s"), response.GetString());
         }
+    }
+
+    if (canReportOnline) {
+        CTeamServerClient server(m_ini.serverUrl, 2000);
+        const CString response = server.SendOnlineCommand2(
+            _T("CSWB"), tsg[TaskMemoryState::m_Djxh], tsg[TaskMemoryState::m_Name]);
+        DebugLog(_T("server online: index=%s name=%s server=%s response=%s"),
+                 tsg[TaskMemoryState::m_Djxh].GetString(),
+                 tsg[TaskMemoryState::m_Name].GetString(),
+                 m_ini.serverUrl.GetString(), response.GetString());
+    } else {
+        DebugLog(_T("server online skipped: missing [窗口] 本机序号 or character name"));
     }
 
     CString initMessage;
@@ -749,26 +778,38 @@ bool CTaskScript::InitializeGameState() {
             }
         }
 
-        auto deleteSectionValues = [&](const CString& section) {
-            // Enumerate instead of deleting only the known names, so a
-            // future field is also removed when the date rolls over.
-            const CString keys = Dm()->EnumIniKey(
-                section.GetString(), iniPath.GetString());
-            int fieldPosition = 0;
-            while (fieldPosition != -1) {
-                CString field = keys.Tokenize(_T("|"), fieldPosition);
-                field.Trim();
-                if (!field.IsEmpty()) {
-                    Dm()->DeleteIni(section.GetString(), field.GetString(),
-                                    iniPath.GetString());
-                }
+        auto deleteCacheSection = [&](const CString& section) {
+            // A null key deletes the entire section, including its header.
+            if (!::WritePrivateProfileString(section.GetString(), nullptr,
+                                              nullptr, iniPath.GetString())) {
+                DebugLog(_T("global cache: failed to delete section %s (error=%lu)"),
+                         section.GetString(), ::GetLastError());
             }
         };
 
-        
+        // Older versions removed keys but left empty handle section headers.
+        // Scan sections as well as QBJB: these orphans are no longer indexed.
+        const CString sections = Dm()->EnumIniSection(iniPath.GetString());
+        int sectionPosition = 0;
+        while (sectionPosition != -1) {
+            CString section = sections.Tokenize(_T("|"), sectionPosition);
+            section.Trim();
+            if (section.GetLength() != 10 ||
+                section.Left(2).CompareNoCase(_T("0x")) != 0 ||
+                section.Mid(2).SpanIncluding(_T("0123456789abcdefABCDEF")).GetLength() != 8) {
+                continue;
+            }
+            TCHAR values[4]{};
+            if (::GetPrivateProfileSection(section.GetString(), values,
+                                            _countof(values), iniPath.GetString()) == 0 &&
+                values[0] == _T('\0')) {
+                deleteCacheSection(section);
+            }
+        }
+
         if (cachedDate.Compare(today) != 0) {
             for (const CString& oldHandle : handleKeys) {
-                deleteSectionValues(oldHandle);
+                deleteCacheSection(oldHandle);
                 Dm()->DeleteIni(kGlobalConfigSection, oldHandle.GetString(),
                                 iniPath.GetString());
             }
@@ -818,7 +859,7 @@ bool CTaskScript::InitializeGameState() {
                 // A partially written record is treated as a cache miss so
                 // the current window can repair it.
                 handleCached = false;
-                deleteSectionValues(handleKey);
+                deleteCacheSection(handleKey);
                 Dm()->DeleteIni(kGlobalConfigSection, handleKey.GetString(),
                                 iniPath.GetString());
                 DebugLog(_T("global cache record is invalid; rebuilding it"));
@@ -2791,20 +2832,153 @@ void CTaskScript::Fun_Zhengl()
 }
 void CTaskScript::Fub_DYanz2()      { RunTaskStub(_T("Fub_DYanz2"),      _T("\u5355\u71d52")); }
 
+// \u83b7\u53d6\u670d\u52a1\u5668\u4e92\u65a5\u4f53\uff08\u53d1\u9001 HHBP \u5165\u961f\uff0c\u8f6e\u8be2 WWBP \u76f4\u5230\u8fd4\u56de 1111\uff09
+bool CTaskScript::mHzkhct(const CString& bangpaiName) {
+    if (!m_wnd || !m_wnd->teamClient) {
+        LogD(_T("mHzkhct: teamClient \u672a\u521d\u59cb\u5316"));
+        return false;
+    }
+
+    const CString localAddr = m_wnd->wndIp;
+    if (localAddr.IsEmpty() || localAddr == _T("NULL") || localAddr == _T("FFFF") ||
+        localAddr.Find(_T('-')) >= 0 || bangpaiName.IsEmpty()) {
+        LogD(_T("mHzkhct: invalid owner or guild key: owner=%s guild=%s"),
+             localAddr.GetString(), bangpaiName.GetString());
+        return false;
+    }
+    if (m_control->IsStopping()) return false;
+
+    // \u53d1\u9001 HHBP \u5165\u961f\u8bf7\u6c42
+    CString response = m_wnd->teamClient->SendOnlineCommand3(_T("HHBP"), localAddr, bangpaiName);
+    LogD(_T("HHBP \u5165\u961f: addr=%s bangpai=%s response=%s"),
+         localAddr.GetString(), bangpaiName.GetString(), response.GetString());
+
+    CString enqueueAck;
+    enqueueAck.Format(_T("0-HHBP-%s-%s"), localAddr.GetString(), bangpaiName.GetString());
+    if (response != enqueueAck) {
+        LogD(_T("HHBP failed: response=%s"), response.GetString());
+        return false;
+    }
+
+    // \u8f6e\u8be2 WWBP \u76f4\u5230\u8f6e\u5230\u81ea\u5df1\uff08\u8fd4\u56de 1111\uff09
+    const ULONGLONG waitStarted = ::GetTickCount64();
+    ULONGLONG nextWaitLogAt = waitStarted;
+    while (::GetTickCount64() - waitStarted < 60000) {
+        if (m_control->IsStopping()) {
+            LogD(_T("WWBP stopped: owner=%s guild=%s"), localAddr.GetString(), bangpaiName.GetString());
+            mFzkhct(bangpaiName);
+            return false;
+        }
+
+        response = m_wnd->teamClient->SendOnlineCommand3(_T("WWBP"), localAddr, bangpaiName);
+
+        if (response == _T("1111")) {
+            LogD(_T("WWBP \u6210\u529f\u83b7\u53d6\u4e92\u65a5\u4f53: addr=%s bangpai=%s"),
+                 localAddr.GetString(), bangpaiName.GetString());
+            return true;
+        } else if (response != _T("2222")) {
+            LogD(_T("WWBP failed: response=%s"), response.GetString());
+            mFzkhct(bangpaiName);
+            return false;
+        }
+
+        // 2222 \u8868\u793a\u8fd8\u5728\u6392\u961f\uff0c\u7ee7\u7eed\u7b49\u5f85
+        const ULONGLONG now = ::GetTickCount64();
+        if (now >= nextWaitLogAt) {
+            LogD(_T("WWBP \u6392\u961f\u4e2d: addr=%s bangpai=%s response=2222 elapsed=%llu/60000ms"),
+                 localAddr.GetString(), bangpaiName.GetString(), now - waitStarted);
+            nextWaitLogAt = now + 5000;
+        }
+        SleepEx(100);
+    }
+
+    LogD(_T("WWBP \u8d85\u65f6\uff1aaddr=%s bangpai=%s"),
+         localAddr.GetString(), bangpaiName.GetString());
+    mFzkhct(bangpaiName);
+    return false;
+}
+
+// \u91ca\u653e\u670d\u52a1\u5668\u4e92\u65a5\u4f53\uff08\u53d1\u9001 LLBP\uff09
+void CTaskScript::mFzkhct(const CString& bangpaiName) {
+    if (!m_wnd || !m_wnd->teamClient) {
+        LogD(_T("mFzkhct: teamClient \u672a\u521d\u59cb\u5316"));
+        return;
+    }
+
+    const CString localAddr = m_wnd->wndIp;
+    if (localAddr.IsEmpty() || localAddr == _T("NULL") || localAddr == _T("FFFF") ||
+        localAddr.Find(_T('-')) >= 0 || bangpaiName.IsEmpty()) {
+        LogD(_T("mFzkhct: invalid owner or guild key: owner=%s guild=%s"),
+             localAddr.GetString(), bangpaiName.GetString());
+        return;
+    }
+    const CString response = m_wnd->teamClient->SendOnlineCommand3(_T("LLBP"), localAddr, bangpaiName);
+
+    LogD(_T("LLBP \u91ca\u653e\u4e92\u65a5\u4f53: addr=%s bangpai=%s response=%s"),
+         localAddr.GetString(), bangpaiName.GetString(), response.GetString());
+}
+
 void CTaskScript::Fub_Test() {
-    const CString mapName = cRead_CeguiText(MiniMap_Placename);
-    if (!m_control || m_control->IsStopping() || !WaitIfPaused()) return;
-    const DWORD playerObject = Read_Dw(static_cast<DWORD>(jz[TaskMemoryState::jYcdiz]));
+    // 初始化帮派名称
+    CString bangmu1, bangmu2;
+    CStringArray luxjhh;
+    int routeOffset = 0;
+    CString routePoint = tsg[TaskMemoryState::luxi].Tokenize(_T("-"), routeOffset);
+    while (!routePoint.Trim().IsEmpty()) {
+        luxjhh.Add(routePoint);
+        routePoint = tsg[TaskMemoryState::luxi].Tokenize(_T("-"), routeOffset);
+    }
+    int sll = luxjhh.GetCount();
+    if (sll < 2) {
+        LogD(_T("Fub_Test: route requires at least 2 points, got %d"), sll);
+        return;
+    }
+    bangmu1.Format(_T("%s%s%d"), luxjhh[1], luxjhh[0], Mams[benbxh]);
+    bangmu2.Format(_T("%s%s%d"), luxjhh[sll - 2], luxjhh[sll - 1], Mams[duibxh]);
+    mFzkhct(bangmu1);
+    mFzkhct(bangmu2);
+
+    LogD(_T("tttt"));
+    {
+        CSingleLock mm_lock(&m_mutex2, TRUE);  // 获取本地互斥体
+        LogD(_T("tttt1"));
+
+        if (!mHzkhct(bangmu1)) {  // 获取局域网互斥体
+            LogD(_T("Fub_Test: acquire failed; skipping notification test"));
+            return;
+        }
+
+        // 获取互斥体后立即请求置前，省去测试前置等待。
+        if (m_control->IsStopping()) {
+            mFzkhct(bangmu1);
+            return;
+        }
+
+        CString testParam;
+        testParam.Format(_T("0-SZCC-%s-%s"), tsg[TaskMemoryState::m_Djxh].GetString(), m_wnd->wndIp.GetString());
+        CString response = m_wnd->teamClient->Send(_T("test"), testParam);
+        LogD(_T("Fub_Test: cmd=test param=%s response=%s"), testParam.GetString(), response.GetString());
+
+        SleepEx(15000);     // 等待5秒；停止时也发送 WBCC 收尾
+
+        testParam.Format(_T("0-WBCC-%s-%s"), tsg[TaskMemoryState::m_Djxh].GetString(), m_wnd->wndIp.GetString());
+        response = m_wnd->teamClient->Send(_T("test"), testParam);
+        LogD(_T("Fub_Test: cmd=test param=%s response=%s"), testParam.GetString(), response.GetString());
+
+        mFzkhct(bangmu1);  // 释放局域网互斥体
+
+    }  // 释放本地互斥体（mm_lock析构）
 
     //wBagJiaoH(0x1F, 0x15);
     //CString cctt;
     //ReadLastTeamChat(cctt);
-    HkWorld(1);
-    CString ccctt;
-    ReadWorldMessage(ccctt);
-    DebugLog(_T("科举答案：%s"), ccctt);
-	const CString chkword = qHksxwz(ccctt);
-	LogD(_T("杀星消息：%s"), chkword.GetString());
+
+ //   HkWorld(1);
+ //   CString ccctt;
+ //   ReadWorldMessage(ccctt);
+ //   DebugLog(_T("科举答案：%s"), ccctt);
+	//const CString chkword = qHksxwz(ccctt);
+	//LogD(_T("杀星消息：%s"), chkword.GetString());
 
 
     //// 科举测试：轮询监视题目，题目变化就自动打印题目+答案（点停止退出）。

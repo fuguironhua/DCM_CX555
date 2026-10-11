@@ -72,10 +72,9 @@ bool CTeamServerClient::ParseOnlineLuxiResponse(
     result = OnlineLuxiResult{};
 
     if (response.IsEmpty() || response == _T("FF1000")) return false;
-    if (response.Find(_T("name-0-luxi-")) < 0) return false;
-
     std::vector<CString> parts;
     if (!SplitResponse(response, parts) || parts.size() < 4) return false;
+    if (parts[0] != _T("luxi")) return false;
 
     result.luxi = parts[1];
     result.benbxhText = parts[2];
@@ -83,7 +82,7 @@ bool CTeamServerClient::ParseOnlineLuxiResponse(
     result.luxi.Trim();
     result.benbxh = static_cast<DWORD>(_ttoi(result.benbxhText.GetString()));
     result.duibxh = static_cast<DWORD>(_ttoi(result.duibxhText.GetString()));
-    return !result.luxi.IsEmpty();
+    return !result.luxi.IsEmpty() && result.luxi != _T("NULL");
 }
 
 CString CTeamServerClient::BuildTeamUrl(const CString& command,

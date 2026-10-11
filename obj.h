@@ -15,6 +15,7 @@ private:
 public:
     dmsoft();
     virtual ~dmsoft();
+    bool IsValid() const noexcept { return obj != nullptr; }
     tagWndInfo* m_pWnd;
 	CString tsls;//临时用字符串
 	DWORD dwls;//临时dw
