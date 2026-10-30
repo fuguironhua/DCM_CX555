@@ -58,6 +58,12 @@ private:
     afx_msg void OnDebugClear();
     afx_msg void OnTimer(UINT_PTR id);
     afx_msg void OnListItemChanged(NMHDR* pNMHDR, LRESULT* pResult);
+    afx_msg void OnWindowListClick(NMHDR* pNMHDR, LRESULT* pResult);
+    afx_msg void OnWindowListCustomDraw(NMHDR* pNMHDR, LRESULT* pResult);
+    void UpdateRowButtons(int row);
+    void ToggleWindowSequence(int row);
+    void ToggleWindowPause(int row);
+    bool SyncTaskRunListWithSelection();
     afx_msg void OnTaskListDblClick(NMHDR* pNMHDR, LRESULT* pResult);
     afx_msg void OnTaskRunListDblClick(NMHDR* pNMHDR, LRESULT* pResult);
     afx_msg void OnTaskToggle();
@@ -102,5 +108,7 @@ private:
     std::vector<std::shared_ptr<tagWndInfo>> m_windows;
     bool m_taskSequenceStarted = false;
     size_t m_taskRowsRemoved = 0;
+    // Window whose remaining tasks the execution list is currently mirroring.
+    HWND m_viewedSequenceHwnd = nullptr;
 };
 

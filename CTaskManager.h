@@ -24,6 +24,7 @@ public:
     bool IsRunning() const;
     CString Status() const;
     size_t CompletedTaskCount() const;
+    std::vector<int> RemainingTaskIds() const;
     tagTaskInfo& Info() { return m_info; }
     const tagTaskInfo& Info() const { return m_info; }
 
@@ -58,6 +59,7 @@ public:
     bool IsPaused(HWND hwnd) const;
     CString Status(HWND hwnd) const;
     size_t CompletedTaskCount(const std::vector<HWND>& windows = {}) const;
+    std::vector<int> RemainingTaskIds(HWND hwnd) const;
     size_t RunningCount() const;
 
 private:

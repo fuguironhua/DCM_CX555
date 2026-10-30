@@ -75,8 +75,11 @@ protected:
     DWORD m_shaxXuejiTick = 0;
     DWORD m_shaxItemTick = 0;
     DWORD m_shaxSkillTick = 0;
+    DWORD m_shaxGongSunId = 0;//本轮首次发现的可攻击公孙圣，分身不覆盖此 ID
+    bool m_shaxGongSunPetRest = false;
     static constexpr DWORD kHuaRongTrapWindowMs = 25000;//花容喊话后25秒内，攻击前检查陷阱
     bool ShaxActive();
+    bool ShaxHandleGongSunClones();//返回 true 时暂停攻击，等待分身转移目标
     bool ReadShaxPosition(DWORD objectSlot, Point2f& point);
     bool ReadShaxVitals(float& hp, float& mp);
 

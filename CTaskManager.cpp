@@ -63,6 +63,13 @@ CString CWindowRuntime::Status() const {
 size_t CWindowRuntime::CompletedTaskCount() const {
     return m_task ? m_task->CompletedTaskCount() : 0;
 }
+std::vector<int> CWindowRuntime::RemainingTaskIds() const {
+    if (!m_schedule || !m_task) return {};
+    const auto snapshot = m_schedule->Read();
+    if (!snapshot.running) return {};
+    const size_t done = (std::min)(m_task->CompletedTaskCount(), snapshot.taskIds.size());
+    return std::vector<int>(snapshot.taskIds.begin() + static_cast<std::ptrdiff_t>(done), snapshot.taskIds.end());
+}
 bool CWindowRuntime::IsRunning() const { return m_task && m_helper && m_yan && (m_task->IsRunning() || m_helper->IsRunning() || m_yan->IsRunning()); }
 CTaskManager::CTaskManager(const CAppConfig& config, HWND logWindow, TaskSchedulePtr schedule)
     : m_ini(config.Window()), m_logWindow(logWindow) { (void)schedule; }
@@ -141,5 +148,10 @@ size_t CTaskManager::CompletedTaskCount(const std::vector<HWND>& windows) const 
         }
     }
     return found ? minimum : 0;
+}
+std::vector<int> CTaskManager::RemainingTaskIds(HWND hwnd) const {
+    std::scoped_lock lock(m_mutex);
+    const auto it = m_runtimes.find(hwnd);
+    return it != m_runtimes.end() ? it->second->RemainingTaskIds() : std::vector<int>{};
 }
 size_t CTaskManager::RunningCount() const { std::scoped_lock lock(m_mutex); size_t count = 0; for (const auto& [hwnd, runtime] : m_runtimes) if (runtime->IsRunning()) ++count; return count; }

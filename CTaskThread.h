@@ -217,8 +217,13 @@ public:
 	int wRenw_jix(DWORD npcid, DWORD rwid);//继续任务
 	int wRenw_wan(DWORD npcid, DWORD rwid);//完成任务--无奖励选择的
     DWORD wXunL_Guih(float xx,float yy);//寻路规划
+    // 寻路判定环境不可用（CWorldManager 链断裂、dxldj 取不到）时的返回值。
+    // 调用方看到该值应按"无法判定"处理，而不是当成"不可达"。
+    static constexpr DWORD kReachUnknown = 0xFFFFFFFFu;
     void wBagJiaoH(DWORD xh1, DWORD xh2);//背包交换
 
+    void wOpenSadg(int xuh, int longl);//打开扫荡副本--0点数2龙令
+    void wClicSadg(int fbxh, int xuh, int longl);//点击扫荡
 
     //---------------------遍历技能----------------------
 	void  BianAr(DWORD Erc);//遍历技能
@@ -361,7 +366,7 @@ public:
     CString Read_BagCr(int zl);//读装备制造者名字
 
 	//---------------------寻路----------------------
-	void wBenTuXuL3z(float xx, float yy);//带方向副本用 监控停止 准确位置
+	void wBenTuXuL3z(float xx, float yy, float arrivalDistance = 1.0f);//带方向副本用 监控停止 准确位置
 	void wBenTuXuL3f(float xx, float yy);//带方向副本用 监控停止
 	void wBenTuXuL3fy(float xx, float yy);//带方向副本用 监控停止--验证码
 	int wBenTuXuL33(float xx, float yy, int fx);//带方向副本用距离近--8个方向
@@ -369,7 +374,7 @@ public:
 	void wBenTuXuL35(float xx, float yy);//反贼
 
 	int wKuaTuXL(float xx, float yy, int dtid);//
-	int wKuaTuXL33(float xx, float yy, int dtid);//
+	int wKuaTuXL33(float xx, float yy, int dtid, float arrivalDistance = 2.0f);//
 	void wBenTuXuL7(int mos, float xx, float yy, int szq = 1);//半圆寻路--0 1-4象限-- 1  2-1象限
 
 

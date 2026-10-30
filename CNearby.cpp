@@ -252,7 +252,11 @@ bool CNearby::UseRouteMoveSkills(const Point2f& current, const Point2f& target) 
         float manaBefore = -1.0f;
         Point2f castPoint{};
         if (skill.kind == RouteMoveSkillKind::SelfBuff) {
+            LogD(_T("route skill: phase=cast.begin id=0x%lX kind=self"),
+                 static_cast<unsigned long>(skill.id));
             sent = wUseSk6(skill.id, static_cast<DWORD>(-1));
+            LogD(_T("route skill: phase=cast.end id=0x%lX dispatched=%d"),
+                 static_cast<unsigned long>(skill.id), sent ? 1 : 0);
         } else if (remaining > 20.0f) {
             // Do not teleport while the acceleration buff is active.
             if (static_cast<LONG>(now - m_routeAccelActiveUntil) < 0) {
@@ -268,29 +272,48 @@ bool CNearby::UseRouteMoveSkills(const Point2f& current, const Point2f& target) 
             constexpr float kTeleportDistance = 19.6f;
 
             // ① 优先：人物朝向方向的点，且必须可到达（wXunL_Guih == 1）。
+            // 判定环境失效单独记录，只有明确返回 1 的点才用于施放。
+            bool reachUnavailable = false;
+            const auto reachable = [this, &reachUnavailable, skillId = skill.id](float px, float py) {
+                LogD(_T("route skill: phase=reach.begin id=0x%lX point=(%.1f, %.1f)"),
+                     static_cast<unsigned long>(skillId), px, py);
+                const DWORD reach = wXunL_Guih(px, py);
+                LogD(_T("route skill: phase=reach.end id=0x%lX result=%lu"),
+                     static_cast<unsigned long>(skillId), static_cast<unsigned long>(reach));
+                if (reach == kReachUnknown) reachUnavailable = true;
+                return reach == 1;
+            };
             const Point2f facingPoint = Read_PlayerFacingPoint(kTeleportDistance);
             bool pointReady = false;
-            if (wXunL_Guih(facingPoint.x, facingPoint.y) == 1) {
+            // Read_PlayerFacingPoint 在 actor 取不到时返回 (0,0)，这种坐标不能拿来施放。
+            const bool facingValid = facingPoint.x != 0.0f || facingPoint.y != 0.0f;
+            if (facingValid && reachable(facingPoint.x, facingPoint.y)) {
                 castPoint = facingPoint;
                 pointReady = true;
             } else {
                 // ② 其次：路线上的点（圆∩折线，kTeleportDistance 米），同样要求可到达。
                 Point2f pathPoint{};
                 if (GetTeleportPointOnPath(current, kTeleportDistance, pathPoint) &&
-                    wXunL_Guih(pathPoint.x, pathPoint.y) == 1) {
+                    reachable(pathPoint.x, pathPoint.y)) {
                     castPoint = pathPoint;
                     pointReady = true;
                 }
             }
             // ③ 两者都不可到达：等 2 秒再判断。
             if (!pointReady) {
-                logSkillSkip(skill.id, _T("no reachable teleport point, wait 2s"));
+                logSkillSkip(skill.id, reachUnavailable
+                    ? _T("reachability chain unavailable, wait 2s")
+                    : _T("no reachable teleport point, wait 2s"));
                 m_routeMoveSkillReadyTick[skill.id] = now + 2000;
                 continue;
             }
 
             manaBefore = Read_Mana(); // 记录施法前蓝量，用于判定瞬移是否成功
+            LogD(_T("route skill: phase=cast.begin id=0x%lX point=(%.1f, %.1f)"),
+                 static_cast<unsigned long>(skill.id), castPoint.x, castPoint.y);
             sent = wUseSk6(skill.id, castPoint);
+            LogD(_T("route skill: phase=cast.end id=0x%lX dispatched=%d"),
+                 static_cast<unsigned long>(skill.id), sent ? 1 : 0);
         }
 
         if (sent) {
@@ -1746,6 +1769,50 @@ void CNearby::ShaxUseSkills()
     }
 }
 
+bool CNearby::ShaxHandleGongSunClones()
+{
+    if (!m_shaxGongSunId || !ShaxActive()) return false;
+    const DWORD selfId = Read_Dw(tsg[TaskMemoryState::ZJID]);
+    const DWORD petSlot = Mams[CoXuHa];
+    const bool petOut = petSlot != MAXDWORD && Read_CWCZ(static_cast<int>(petSlot));
+    const DWORD petId = petOut
+        ? static_cast<DWORD>(Read_CWID(static_cast<int>(petSlot))) : 0;
+
+    // 遍历全部存活分身，不要求分身自身可攻击；保留外层已选出的首领列表。
+    std::vector<Monst> savedMonsters;
+    savedMonsters.swap(vMonst);
+    NerbMonst2(Read_Dw(tsg[TaskMemoryState::ERC]),
+               NerbCs(25, { 30, 33 }, _T("公孙圣")), false);
+    std::vector<Monst> clones;
+    clones.swap(vMonst);
+    savedMonsters.swap(vMonst);
+    DWORD selfAttacker = 0;
+    for (const Monst& monster : clones) {
+        const DWORD id = static_cast<DWORD>(monster.ID);
+        if (!id || id == MAXDWORD || id == m_shaxGongSunId) continue;
+        const DWORD target = static_cast<DWORD>(Read_ATID(monster.Dibu));
+        if (!target || target == MAXDWORD) continue;
+        if (selfId && selfId != MAXDWORD && target == selfId) selfAttacker = id;
+        if (petId && petId != MAXDWORD && target == petId && !m_shaxGongSunPetRest) {
+            m_shaxGongSunPetRest = true;
+            LogD(_T("公孙圣：分身 id=%lu 攻击宠物 id=%lu，休息宠物"), id, petId);
+        }
+    }
+    if (m_shaxGongSunPetRest) {
+        m_shaxPetRest = true;//本场保持休息，ShaxMaintain 不再自动召唤。
+        if (petOut) wPet_Chu(static_cast<int>(petSlot), 1);
+    }
+    if (!selfAttacker) return false;
+
+    wXuanZg(MAXDWORD);//停止普攻，避免立即打破隐身。
+    if ((!m_shaxInvisibleTick || GetTickCount() - m_shaxInvisibleTick >= 32000) &&
+        wUseSk6(0xF8, MAXDWORD)) {
+        m_shaxInvisibleTick = GetTickCount();
+        LogD(_T("公孙圣：分身 id=%lu 攻击自己 id=%lu，使用隐身"), selfAttacker, selfId);
+    }
+    return true;
+}
+
 int CNearby::KillMonstShax()
 {
     return KillMonstShaxInternal(0, 0, 0, {}, false);
@@ -1781,6 +1848,10 @@ int CNearby::KillMonstShaxInternal(DWORD dglx, DWORD dgsj, DWORD xjsj, Point2f p
     while (ShaxActive()) {
         if (Read_RWZT(true) == 9) return M_dead;
         if (IsWndGuot() || Read_DTID() != 0x222) return M_nomt;
+        if (aMonst.mname == _T("公孙圣") && ShaxHandleGongSunClones()) {
+            SleepEx(300);
+            continue;
+        }
         if (ReadWorldMessage(tsg[TaskMemoryState::hkwords])) return M_hmsg;
         if (Read_GENS()) { SleepEx(1000); continue; }
         if (!NerExist(aMonst.Dibu)) return M_nomt;
@@ -2164,16 +2235,15 @@ bool CNearby::ReadGamePath(std::vector<Point2f>& path)
     if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd) return false;
 
     const long targetHwnd = static_cast<long>(reinterpret_cast<INT_PTR>(m_wnd->hWnd));
-    const LONGLONG game = m_dm->GetModuleBaseAddr(targetHwnd, _T("Game.exe"));
-    if (game < 0x10000) return false;
-
-    // 2026-09 客户端寻路链（PathLib.dll 的路径对象）：
-    //   [Game+0x7C6A7C] → +0xD95C → +0xA4 → +4 = inner
+    // 0.08.3612 客户端寻路链（PathLib.dll 的路径对象）：
+    //   [jz[CWorldManager]] → +0xDC08 → +0xA4 → +4 = inner
     //   路径点数组在 inner+0x1C(begin)/inner+0x20(end)，每点 8 字节 float(x,z)。
-    constexpr DWORD kPathManagerRva = 0x007C6A7C;
-    const DWORD manager = Read_Dw(static_cast<DWORD>(game) + kPathManagerRva);
+    // 与 wXunL_Guih 共用初始化的全局槽，避免这里独立保留旧 RVA。
+    const DWORD managerSlot = static_cast<DWORD>(jz[TaskMemoryState::CWorldManager]);
+    if (managerSlot < 0x10000) return false;
+    const DWORD manager = Read_Dw(managerSlot);
     if (manager < 0x10000) return false;
-    const DWORD scene = Read_Dw(manager + 0xD95C);
+    const DWORD scene = Read_Dw(manager + 0xDC08);
     if (scene < 0x10000) return false;
     const DWORD map = Read_Dw(scene + 0xA4);
     if (map < 0x10000) return false;

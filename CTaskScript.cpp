@@ -13,40 +13,40 @@ namespace {
 // These are the CX5 offsets used by the reference constructor. They are
 // deliberately kept as data in the new per-window state instead of being
 // process-wide globals.
-constexpr LONGLONG kRolePointerOffset = 3216635;       // ROLEP
-constexpr LONGLONG kBagPointerOffset = 3209849;        // BAGBP
-constexpr LONGLONG kMapPointerOffset = 3333305;        // MYDITUP
-constexpr LONGLONG kRoleWorkOffset = 2089596;          // RENWP
-constexpr LONGLONG kRoleErcOffset = 1611047;           // RENERCP
-constexpr LONGLONG kHookCodeOffset = 3420342;          // HHKK3P
-constexpr LONGLONG kLuaOffset = 3735957;               // LUAP
-constexpr LONGLONG kBagSplitOffset = 89674;             // FENGBP
-constexpr LONGLONG kMonsterFenOffset = 1653545;        // MONSTFENP
-constexpr LONGLONG kSleepOffset = 3152901;             // KESLEEPP
-constexpr LONGLONG kGetTickOffset = 3475609;           // KEGETTIP
-constexpr LONGLONG kLuaDoStringOffset = 2754090;       // GALUADOSP
-constexpr LONGLONG kGameThreadOffset = 3148495;        // GAZHANTP
-constexpr LONGLONG kSendOffset = 3897970;              // GAWSENDP
-constexpr LONGLONG kTerminateThreadOffset = 3149794;   // KETERMTP
-constexpr LONGLONG kMapTransitionOffset = 1889684;     // KUATUXLP
-constexpr LONGLONG kTeamOffset = 541893;               // GADUIWP
-constexpr LONGLONG kDebugOffset = 3387509;             // GADEBUGP
-constexpr LONGLONG kStringOffset = 2754342;            // GSTRSTRP
-constexpr LONGLONG kTaskHookOffset = 2541031;           // HKRWZTP
-constexpr LONGLONG kShopOffset = 3536556;              // SHANGHP
-constexpr LONGLONG kActivityOffset = 673018;           // HUOYP
-constexpr LONGLONG kSweepOffset = 645746;              // SAODP
-constexpr LONGLONG kKeyInputOffset = 3149144;          // SHIJEP
-constexpr LONGLONG kMemoryCopyOffset = 5874958;        // MEMCP
-constexpr LONGLONG kRoleNameOffset = 2096072;          // RENMSP
-constexpr LONGLONG kAttackNumberOffset = -3604480;     // ATTNUMP
-constexpr LONGLONG kBufferClearOffset = 2543479;       // BUFXP
-constexpr LONGLONG kWindowBaseOffset = 1125552;        // WPBDP
-constexpr LONGLONG kSweepDetailOffset = 148033;        // SAODDP
-constexpr LONGLONG kWindowOpenOffset = 312859;         // WNDOPP
-constexpr LONGLONG kSceneHeightOffset = 625840;         // SHIHP
-constexpr LONGLONG kBagHelperOffset = 518688;           // BAGJHP
-constexpr LONGLONG kMapCheckOffset = 807808;           // GAXUNLUGP
+constexpr LONGLONG kRolePointerOffset = 0x2731D4;       // ROLEP
+constexpr LONGLONG kBagPointerOffset = 3257625;        // BAGBP
+constexpr LONGLONG kMapPointerOffset = 3382105;        // MYDITUP
+constexpr LONGLONG kRoleWorkOffset = 2134476;          // RENWP
+constexpr LONGLONG kRoleErcOffset = 1648791;           // RENERCP
+constexpr LONGLONG kHookCodeOffset = 3470742;          // HHKK3P
+constexpr LONGLONG kLuaOffset = 3788293;               // LUAP
+constexpr LONGLONG kBagSplitOffset = 89866;             // FENGBP
+constexpr LONGLONG kMonsterFenOffset = 1690841;        // MONSTFENP
+constexpr LONGLONG kSleepOffset = 3201653;             // KESLEEPP
+constexpr LONGLONG kGetTickOffset = 3526057;           // KEGETTIP
+constexpr LONGLONG kLuaDoStringOffset = 2802282;       // GALUADOSP
+constexpr LONGLONG kGameThreadOffset = 3197247;        // GAZHANTP
+constexpr LONGLONG kSendOffset = 3951026;              // GAWSENDP
+constexpr LONGLONG kTerminateThreadOffset = 3198546;   // KETERMTP
+constexpr LONGLONG kMapTransitionOffset = 1927988;     // KUATUXLP
+constexpr LONGLONG kTeamOffset = 556197;               // GADUIWP
+constexpr LONGLONG kDebugOffset = 3436533;             // GADEBUGP
+constexpr LONGLONG kStringOffset = 2802534;            // GSTRSTRP
+constexpr LONGLONG kTaskHookOffset = 2588855;           // HKRWZTP
+constexpr LONGLONG kShopOffset = 3587564;              // SHANGHP
+constexpr LONGLONG kActivityOffset = 690666;           // HUOYP
+constexpr LONGLONG kSweepOffset = 663314;              // SAODP
+constexpr LONGLONG kKeyInputOffset = 3197896;          // SHIJEP
+constexpr LONGLONG kMemoryCopyOffset = 5935854;        // MEMCP
+constexpr LONGLONG kRoleNameOffset = 2140952;          // RENMSP
+constexpr LONGLONG kAttackNumberOffset = -5242880;     // ATTNUMP
+constexpr LONGLONG kBufferClearOffset = 2591303;       // BUFXP
+constexpr LONGLONG kWindowBaseOffset = 1158080;        // WPBDP
+constexpr LONGLONG kSweepDetailOffset = 148977;        // SAODDP
+constexpr LONGLONG kWindowOpenOffset = 313067;         // WNDOPP
+constexpr LONGLONG kSceneHeightOffset = 626496;         // SHIHP
+constexpr LONGLONG kBagHelperOffset = 518768;           // BAGJHP
+constexpr LONGLONG kMapCheckOffset = 832496;           // GAXUNLUGP
 
 bool ShouldUseRoute3(const CString& route) {
     const int separator = route.ReverseFind(_T('-'));
@@ -58,21 +58,21 @@ bool ShouldUseRoute3(const CString& route) {
 }
 
 // Retained offsets for task paths that are not wired into this framework yet.
-constexpr LONGLONG kF1Offset = -3604478;               // F1FP
-constexpr LONGLONG kRoleEcxOffset = 1098465;            // RENWECXP
-constexpr LONGLONG kLocalMoveOffset = 1076091;          // BENTUXLP
-constexpr LONGLONG kSelectTargetOffset = 6093535;       // XZZTP
-constexpr LONGLONG kLocalMove2Offset = -3604478;        // BENTUXL2P
-constexpr LONGLONG kRunOpenOffset = -3604470;           // RUNOPENP
-constexpr LONGLONG kSelectOffset = -3604478;            // XUANP
-constexpr LONGLONG kSkillOffset = 1015826;              // SKILLP
-constexpr LONGLONG kUseBagOffset = -3604466;            // USEBAGP
-constexpr LONGLONG kMapCheckCallOffset = -3604468;      // GAXUNLUCP
-constexpr LONGLONG kLocalMove3Offset = 1849082;         // BENTUXL3P
-constexpr LONGLONG kWindowDetailOffset = 3650288;       // WPJDP
-constexpr LONGLONG kCeguiFAOffset = 250155;             // CEFAP
-constexpr LONGLONG MANAGEP = 0x24BD3C;           // MANAGEP（CEGUIBase.dll 偏移，2026-09-17 更新后实测仍有效）
-constexpr LONGLONG WORLDMANAP = 0x7C6A7C;
+constexpr LONGLONG kF1Offset = -5242878;               // F1FP
+constexpr LONGLONG kRoleEcxOffset = 1130481;            // RENWECXP
+constexpr LONGLONG kLocalMoveOffset = 1107835;          // BENTUXLP
+constexpr LONGLONG kSelectTargetOffset = 6156015;       // XZZTP
+constexpr LONGLONG kLocalMove2Offset = -5242878;        // BENTUXL2P
+constexpr LONGLONG kRunOpenOffset = -5242870;           // RUNOPENP
+constexpr LONGLONG kSelectOffset = -5242878;            // XUANP
+constexpr LONGLONG kSkillOffset = 1046314;              // SKILLP
+constexpr LONGLONG kUseBagOffset = -5242866;            // USEBAGP
+constexpr LONGLONG kMapCheckCallOffset = -5242868;      // GAXUNLUCP
+constexpr LONGLONG kLocalMove3Offset = 1886746;         // BENTUXL3P
+constexpr LONGLONG kWindowDetailOffset = 3701008;       // WPJDP
+constexpr LONGLONG kCeguiFAOffset = 281147;             // CEFAP
+constexpr LONGLONG MANAGEP = 0x24BDD4;           // MANAGEP（CEGUIBase.dll 偏移，2026-10-23 客户端更新后重定位）
+constexpr LONGLONG WORLDMANAP = 0x7DC57C; // 0.08.3612: CWorldManager 全局指针槽
 // 2026-09-17 客户端更新后这两个跑商全局读取无效（读到 0/1），但当前代码只赋值、无使用方；
 // 待跑商功能真正用到时，再按旧版 IDA 库(Game.exe.i64) + 新版对比重新定位。
 constexpr LONGLONG PaoShangSceneManagerGlobal = 0x7CE46C;
@@ -507,7 +507,7 @@ bool CTaskScript::InitializeGameState() {
     expression[TaskMemoryState::ZJID].Format(_T("[[%08lX]+64]+2C"), hex32(memory.addresses[TaskMemoryState::ROLEB]));
     expression[TaskMemoryState::m_Dqzt].Format(_T("[[%08lX]+64]+14c"), hex32(memory.addresses[TaskMemoryState::ROLEB]));
     expression[TaskMemoryState::Shuxtb].Format(_T("[[[%08lX]+64]+148]+10"), hex32(memory.addresses[TaskMemoryState::ROLEB]));
-    expression[TaskMemoryState::shuxcw].Format(_T("[%08lX]+6711C"), hex32(memory.addresses[TaskMemoryState::BagJ]));
+    expression[TaskMemoryState::shuxcw].Format(_T("[%08lX]+67120"), hex32(memory.addresses[TaskMemoryState::BagJ]));
     expression[TaskMemoryState::shuxbg].Format(_T("[%08lX]+22C00"), hex32(memory.addresses[TaskMemoryState::BagJ]));
     expression[TaskMemoryState::Rwerc].Format(_T("[%08lX]+4"), hex32(memory.addresses[TaskMemoryState::RenWERC]));
     expression[TaskMemoryState::GJID].Format(_T("[[%08lX]+64]+214"), hex32(memory.addresses[TaskMemoryState::ROLEB]));
@@ -1029,10 +1029,14 @@ bool CTaskScript::InitializeGameState() {
         Dm()->WriteDataAddrFromBin(mmhwnd, jz[TaskMemoryState::Nbsq] + 1460, (DWORD)Renw_Wan, 41);//需要检查 -- +0字节
 
 
-		*(DWORD*)(Renw_XunL + 0x19) = jz[TaskMemoryState::ROLEB];
-        *(DWORD*)(Renw_XunL + 0x3B) = jz[TaskMemoryState::Xguih];
-        *(DWORD*)(Renw_XunL + 0x5B) = jz[TaskMemoryState::Nbsq] + 1510 + 108;
-		Dm()->WriteDataAddrFromBin(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510, (DWORD)Renw_XunL, 106);
+		//*(DWORD*)(Renw_XunL + 0x19) = jz[TaskMemoryState::ROLEB];
+  //      *(DWORD*)(Renw_XunL + 0x3B) = jz[TaskMemoryState::Xguih];
+  //      *(DWORD*)(Renw_XunL + 0x5B) = jz[TaskMemoryState::Nbsq] + 1510 + 108;
+		//Dm()->WriteDataAddrFromBin(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510, (DWORD)Renw_XunL, 106);
+		*(DWORD*)(Renw_XunL + 0xE) = jz[TaskMemoryState::ROLEB];
+		*(DWORD*)(Renw_XunL + 0x1D) = jz[TaskMemoryState::CWorldManager];
+		*(DWORD*)(Renw_XunL + 0x4C) = jz[TaskMemoryState::Nbsq] + 1510 + 88;
+		Dm()->WriteDataAddrFromBin(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510, (DWORD)Renw_XunL, 85);
 
 		*(DWORD*)(BG_jiaoh + 0x19 - 4) = FENGT - 1630 - 0x19;
 		Dm()->WriteDataAddrFromBin(mmhwnd, jz[TaskMemoryState::Nbsq] + 1630, (DWORD)BG_jiaoh, 0x19);//需要检查 -- +0字节
@@ -1045,6 +1049,13 @@ bool CTaskScript::InitializeGameState() {
 		*(DWORD*)(HkWord2 + 0x38) = dwls;
 		*(DWORD*)(HkWord2 + 0x42-4) = jz[TaskMemoryState::Hkwordd] + 7 - jz[TaskMemoryState::Nbsq] - 1660 - 0x42;
 		Dm()->WriteDataAddrFromBin(mmhwnd, jz[TaskMemoryState::Nbsq] + 1660, (DWORD)HkWord2, 0x42);
+
+
+		*(DWORD*)(PS_opsd + 73 - 4) = FENGT - 1740 - 73;
+        Dm()->WriteDataAddrFromBin(mmhwnd, jz[TaskMemoryState::Nbsq] + 1740, (DWORD)PS_opsd, 73);//需要检查
+
+		*(DWORD*)(PS_djsd + 104 - 4) = FENGT - 1820 - 104;
+		Dm()->WriteDataAddrFromBin(mmhwnd, jz[TaskMemoryState::Nbsq] + 1820, (DWORD)PS_djsd, 104);//需要检查
     }
 
 
@@ -2045,6 +2056,8 @@ void CTaskScript::Fub_Shaxg()
     const regex bossRegex = NerbCs(25, { 30, 33 }, bossNames);
     DWORD dlzsjs = 0, dxjjs = 0;
     DWORD huaRongId = 0;
+    m_shaxGongSunId = 0;
+    m_shaxGongSunPetRest = false;
     Point2f liKuiPosition{};
     DWORD positionTeamIndex = MAXDWORD;
     CString positionLeader;
@@ -2060,8 +2073,15 @@ void CTaskScript::Fub_Shaxg()
     HkWorld(1);//打开hook（实现由用户后续补充）
     try {
         while (ShaxActive()) {
+            if (Read_DTID() != 0x222) {
+                m_shaxGongSunId = 0;
+                m_shaxGongSunPetRest = false;
+                m_shaxPetRest = false;
+                SleepEx(1000);
+                continue;
+            }
             if ((Mams[Menpaid] != 4 && Read_GENS()) || IsWndGuot() ||
-                Read_DTID() != 0x222 || Read_RWZT(true) == 9) {
+                Read_RWZT(true) == 9) {
                 SleepEx(1000);
                 continue;
             }
@@ -2072,9 +2092,31 @@ void CTaskScript::Fub_Shaxg()
             // 的首领，避免选中打不了的首领导致“当前”怪判断错误。
             std::vector<Monst> attackable = FindAttackableMonsters(
                 Read_Dw(tsg[TaskMemoryState::ERC]), bossRegex, 25.0f, false);
+            if (!m_shaxGongSunId) {
+                for (const Monst& monster : attackable) {
+                    if (monster.mname == _T("公孙圣") && monster.ID > 0) {
+                        m_shaxGongSunId = static_cast<DWORD>(monster.ID);
+                        LogD(_T("公孙圣：记录首个可攻击本体 id=%lu"), m_shaxGongSunId);
+                        break;
+                    }
+                }
+            }
+            attackable.erase(std::remove_if(attackable.begin(), attackable.end(),
+                [this](const Monst& monster) {
+                    return m_shaxGongSunId && monster.mname == _T("公孙圣") &&
+                        static_cast<DWORD>(monster.ID) != m_shaxGongSunId;
+                }), attackable.end());
             vMonst.swap(attackable);
             const int count = static_cast<int>(vMonst.size());
-            if (count > 0) m_shaxPetRest = vMonst.front().mname == _T("李魁");
+            if (count > 0) {
+                m_shaxPetRest = vMonst.front().mname == _T("李魁") ||
+                    (vMonst.front().mname == _T("公孙圣") && m_shaxGongSunPetRest);
+            }
+            if (m_shaxGongSunId && (count == 0 || vMonst.front().mname == _T("公孙圣")) &&
+                ShaxHandleGongSunClones()) {
+                SleepEx(300);
+                continue;
+            }
             if (m_shaxPetRest && Mams[CoXuHa] != MAXDWORD)
                 wPet_Chu(static_cast<int>(Mams[CoXuHa]), 1);
             if (Mams[Menpaid] == 4) {
@@ -2086,7 +2128,10 @@ void CTaskScript::Fub_Shaxg()
                 }
             }
             if (count <= 0 || vMonst.empty()) {
-                if (aMonst.mname != _T("花容")) RunTeam();
+                // 首领间歇仅在未满血时集合，满血保持当前位置。
+                float hp = 0, mp = 0;
+                if (aMonst.mname != _T("花容") &&
+                    ReadShaxVitals(hp, mp) && hp > 0.0f && hp < 1.0f) RunTeam();
                 SleepEx(1000);
                 continue;
             }
@@ -2203,17 +2248,8 @@ void CTaskScript::Fub_Shaxg()
                 }
                 if (chkword == _T("118")) { dlzsjs = GetTickCount(); continue; }
                 if (chkword == _T("122")) {
-                    SleepEx(10000);
-                    if (!ShaxActive()) break;
-                    NerbMonst2(Read_Dw(tsg[TaskMemoryState::ERC]), bossRegex, false);
-                    for (const auto& monster : vMonst) {
-                        if (monster.mname == _T("公孙圣") && monster.ID != aMonst.ID) {
-                            if (Read_Dw(tsg[TaskMemoryState::ZJID]) == static_cast<DWORD>(Read_ATID(monster.Dibu))) {
-                                wUseSk6(0xF8, MAXDWORD); SleepEx(1500 + rand() % 500);
-                            }
-                            break;
-                        }
-                    }
+                    // 分身由战斗循环持续检查，不再阻塞十秒后仅检查一只。
+                    continue;
                 }
                 if (aMonst.mname == _T("花容")) {
                     dxjjs = GetTickCount();
@@ -2224,11 +2260,15 @@ void CTaskScript::Fub_Shaxg()
         }
     } catch (...) {
         HkWorld(0);
+        m_shaxGongSunId = 0;
+        m_shaxGongSunPetRest = false;
         m_shaxPetRest = oldPetRest;
         m_shaxUseHealthItem = oldUseItem;
         throw;
     }
     HkWorld(0);//关闭hook
+    m_shaxGongSunId = 0;
+    m_shaxGongSunPetRest = false;
     m_shaxPetRest = oldPetRest;
     m_shaxUseHealthItem = oldUseItem;
 }
@@ -2399,7 +2439,15 @@ void CTaskScript::Fun_Datuu()
     const auto openNpc = [&](LPCTSTR name) {
         if (!active()) return false;
         const auto names = NerbCs(20, {0, 0}, name);
-        if (NerbMonst2(Read_Dw(tsg[TaskMemoryState::ERC]), names) <= 0 || vMonst.empty()) return false;
+        // NPC 的血量可以为零，不能使用只保留活怪的 NerbMonst2。
+        if (NerbMonst222(Read_Dw(tsg[TaskMemoryState::ERC]), names) <= 0 || vMonst.empty()) {
+            Point2f position{};
+            const bool positionReady = readPosition(position);
+            LogD(_T("datuu: NPC未找到 name=%s map=%lu posValid=%d pos=(%.2f,%.2f) nodes=%lu ACP=%u"),
+                 name, static_cast<unsigned long>(Read_DTID()), positionReady,
+                 position.x, position.y, static_cast<unsigned long>(varrou.size()), ::GetACP());
+            return false;
+        }
         const Monst npc = vMonst.front();
         if (npc.ID <= 0 || !active()) return false;
         aMonst = npc;
@@ -2428,7 +2476,11 @@ void CTaskScript::Fun_Datuu()
     };
 
     if (!active()) return;
-    if (hasToken()) {
+    const bool tokenPresent = hasToken();
+    LogD(_T("datuu: 令牌检查 present=%d slot=%lu map=%lu ACP=%u"),
+         tokenPresent, static_cast<unsigned long>(bag[balsy].xuh),
+         static_cast<unsigned long>(Read_DTID()), ::GetACP());
+    if (tokenPresent) {
         LogD(_T("datuu: token already present, skip acquisition"));
     } else {
         LogD(_T("datuu: acquire token"));
@@ -2508,17 +2560,25 @@ void CTaskScript::Fun_Datuu()
     if (!active()) return;
     LogD(_T("datuu: travel map=%d x=%.2f y=%.2f"), mapId, destination.x, destination.y);
     if (!active()) return;
-    wKuaTuXL33(destination.x, destination.y, mapId);
+    constexpr float kTokenUseDistance = 2.5f;
+    wKuaTuXL33(destination.x, destination.y, mapId, kTokenUseDistance);
     if (!active() || Read_DTID() != static_cast<DWORD>(mapId)) return;
+    LogD(_T("datuu: travel returned, checking token position (arrival-v2)"));
 
     const auto approach = [&]() {
         Point2f p{};
-        if (!readPosition(p)) return false;
-        if (std::hypot(p.x - destination.x, p.y - destination.y) > 2.5f) {
-            wBenTuXuL3z(destination.x, destination.y);
+        if (Read_DTID() != static_cast<DWORD>(mapId) || IsWndGuot() || !readPosition(p)) {
+            LogD(_T("datuu: waiting for destination map/position"));
+            return false;
+        }
+        if (std::hypot(p.x - destination.x, p.y - destination.y) > kTokenUseDistance) {
+            LogD(_T("datuu: approach pos=(%.2f,%.2f) target=(%.2f,%.2f) distance=%.2f state=%d"),
+                 p.x, p.y, destination.x, destination.y,
+                 std::hypot(p.x - destination.x, p.y - destination.y), Read_RWZT());
+            wBenTuXuL3z(destination.x, destination.y, kTokenUseDistance);
             if (!readPosition(p)) return false;
         }
-        return std::hypot(p.x - destination.x, p.y - destination.y) <= 2.5f;
+        return std::hypot(p.x - destination.x, p.y - destination.y) <= kTokenUseDistance;
     };
     const auto scanMonster = [&]() {
         if (!active()) return false;
@@ -2544,15 +2604,22 @@ void CTaskScript::Fun_Datuu()
         }
         if (!active()) return;
         if (taskComplete()) break;
+        LogD(_T("datuu: at destination, dismount before using token"));
         wRideOn(0);
         // 原 UpdateZB 的位置缓存改为 approach 实时读取；bdatucz 仅有已注释消费者。
         bool found = false;
         for (int attempt = 0; attempt < 15 && active(); ++attempt) {
             if (taskComplete()) break;
+            if (!approach()) { if (!wait(1000)) return; continue; }
+            // 靠近可能等待多次；发送前再读取令牌，避免沿用移动前的包裹临时槽。
             if (hasToken()) {
-                if (!approach()) { if (!wait(1000)) return; continue; }
                 if (!active()) return;
-                wUseBag2();
+                const DWORD tokenSlot = bag[balsy].xuh;
+                const bool sent = wUseBag2();
+                LogD(_T("datuu: use token attempt=%d slot=%lu sent=%d"),
+                     attempt + 1, static_cast<unsigned long>(tokenSlot), sent);
+            } else {
+                LogD(_T("datuu: token absent, checking summoned monster attempt=%d"), attempt + 1);
             }
             if (!wait(1000)) return;
             if (scanMonster()) { found = true; break; }
@@ -2919,55 +2986,64 @@ void CTaskScript::mFzkhct(const CString& bangpaiName) {
 }
 
 void CTaskScript::Fub_Test() {
-    // 初始化帮派名称
-    CString bangmu1, bangmu2;
-    CStringArray luxjhh;
-    int routeOffset = 0;
-    CString routePoint = tsg[TaskMemoryState::luxi].Tokenize(_T("-"), routeOffset);
-    while (!routePoint.Trim().IsEmpty()) {
-        luxjhh.Add(routePoint);
-        routePoint = tsg[TaskMemoryState::luxi].Tokenize(_T("-"), routeOffset);
-    }
-    int sll = luxjhh.GetCount();
-    if (sll < 2) {
-        LogD(_T("Fub_Test: route requires at least 2 points, got %d"), sll);
-        return;
-    }
-    bangmu1.Format(_T("%s%s%d"), luxjhh[1], luxjhh[0], Mams[benbxh]);
-    bangmu2.Format(_T("%s%s%d"), luxjhh[sll - 2], luxjhh[sll - 1], Mams[duibxh]);
-    mFzkhct(bangmu1);
-    mFzkhct(bangmu2);
 
-    LogD(_T("tttt"));
-    {
-        CSingleLock mm_lock(&m_mutex2, TRUE);  // 获取本地互斥体
-        LogD(_T("tttt1"));
+    //wOpenSadg(9, 2);
+    //wClicSadg(10, 5,0);
+	//const DWORD reach = wXunL_Guih(95, 140);
+	//LogD(_T("route skill: phase=reach.end result=%lu"),
+	//	static_cast<unsigned long>(reach));
+    //wDui_Gens(1); SleepEx(5000); wDui_Gens(0);
 
-        if (!mHzkhct(bangmu1)) {  // 获取局域网互斥体
-            LogD(_T("Fub_Test: acquire failed; skipping notification test"));
-            return;
-        }
 
-        // 获取互斥体后立即请求置前，省去测试前置等待。
-        if (m_control->IsStopping()) {
-            mFzkhct(bangmu1);
-            return;
-        }
+    //// 初始化帮派名称
+    //CString bangmu1, bangmu2;
+    //CStringArray luxjhh;
+    //int routeOffset = 0;
+    //CString routePoint = tsg[TaskMemoryState::luxi].Tokenize(_T("-"), routeOffset);
+    //while (!routePoint.Trim().IsEmpty()) {
+    //    luxjhh.Add(routePoint);
+    //    routePoint = tsg[TaskMemoryState::luxi].Tokenize(_T("-"), routeOffset);
+    //}
+    //int sll = luxjhh.GetCount();
+    //if (sll < 2) {
+    //    LogD(_T("Fub_Test: route requires at least 2 points, got %d"), sll);
+    //    return;
+    //}
+    //bangmu1.Format(_T("%s%s%d"), luxjhh[1], luxjhh[0], Mams[benbxh]);
+    //bangmu2.Format(_T("%s%s%d"), luxjhh[sll - 2], luxjhh[sll - 1], Mams[duibxh]);
+    //mFzkhct(bangmu1);
+    //mFzkhct(bangmu2);
 
-        CString testParam;
-        testParam.Format(_T("0-SZCC-%s-%s"), tsg[TaskMemoryState::m_Djxh].GetString(), m_wnd->wndIp.GetString());
-        CString response = m_wnd->teamClient->Send(_T("test"), testParam);
-        LogD(_T("Fub_Test: cmd=test param=%s response=%s"), testParam.GetString(), response.GetString());
+    //LogD(_T("tttt"));
+    //{
+    //    CSingleLock mm_lock(&m_mutex2, TRUE);  // 获取本地互斥体
+    //    LogD(_T("tttt1"));
 
-        SleepEx(15000);     // 等待5秒；停止时也发送 WBCC 收尾
+    //    if (!mHzkhct(bangmu1)) {  // 获取局域网互斥体
+    //        LogD(_T("Fub_Test: acquire failed; skipping notification test"));
+    //        return;
+    //    }
 
-        testParam.Format(_T("0-WBCC-%s-%s"), tsg[TaskMemoryState::m_Djxh].GetString(), m_wnd->wndIp.GetString());
-        response = m_wnd->teamClient->Send(_T("test"), testParam);
-        LogD(_T("Fub_Test: cmd=test param=%s response=%s"), testParam.GetString(), response.GetString());
+    //    // 获取互斥体后立即请求置前，省去测试前置等待。
+    //    if (m_control->IsStopping()) {
+    //        mFzkhct(bangmu1);
+    //        return;
+    //    }
 
-        mFzkhct(bangmu1);  // 释放局域网互斥体
+    //    CString testParam;
+    //    testParam.Format(_T("0-SZCC-%s-%s"), tsg[TaskMemoryState::m_Djxh].GetString(), m_wnd->wndIp.GetString());
+    //    CString response = m_wnd->teamClient->Send(_T("test"), testParam);
+    //    LogD(_T("Fub_Test: cmd=test param=%s response=%s"), testParam.GetString(), response.GetString());
 
-    }  // 释放本地互斥体（mm_lock析构）
+    //    SleepEx(15000);     // 等待5秒；停止时也发送 WBCC 收尾
+
+    //    testParam.Format(_T("0-WBCC-%s-%s"), tsg[TaskMemoryState::m_Djxh].GetString(), m_wnd->wndIp.GetString());
+    //    response = m_wnd->teamClient->Send(_T("test"), testParam);
+    //    LogD(_T("Fub_Test: cmd=test param=%s response=%s"), testParam.GetString(), response.GetString());
+
+    //    mFzkhct(bangmu1);  // 释放局域网互斥体
+
+    //}  // 释放本地互斥体（mm_lock析构）
 
     //wBagJiaoH(0x1F, 0x15);
     //CString cctt;

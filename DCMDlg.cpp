@@ -10,6 +10,12 @@
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "shlwapi.lib")
 
+namespace {
+// Per-row button columns in the window list.
+constexpr int kRunColumn = 4;
+constexpr int kPauseColumn = 5;
+}
+
 BEGIN_MESSAGE_MAP(CDCMDlg, CDialogEx)
     ON_BN_CLICKED(IDC_BUTTON_REFRESH, &CDCMDlg::OnRefresh)
     ON_BN_CLICKED(IDC_BUTTON_START, &CDCMDlg::OnStart)
@@ -30,6 +36,8 @@ BEGIN_MESSAGE_MAP(CDCMDlg, CDialogEx)
     ON_COMMAND(ID_DEBUG_CLEAR, &CDCMDlg::OnDebugClear)
     ON_WM_TIMER()
     ON_NOTIFY(LVN_ITEMCHANGED, IDC_WINDOW_LIST, &CDCMDlg::OnListItemChanged)
+    ON_NOTIFY(NM_CLICK, IDC_WINDOW_LIST, &CDCMDlg::OnWindowListClick)
+    ON_NOTIFY(NM_CUSTOMDRAW, IDC_WINDOW_LIST, &CDCMDlg::OnWindowListCustomDraw)
     ON_NOTIFY(NM_DBLCLK, IDC_TASK_LIST, &CDCMDlg::OnTaskListDblClick)
     ON_NOTIFY(NM_DBLCLK, IDC_TASK_RUN_LIST, &CDCMDlg::OnTaskRunListDblClick)
     ON_MESSAGE(WM_APP + 101, &CDCMDlg::OnDmRegistrationMessage)
@@ -65,9 +73,11 @@ BOOL CDCMDlg::OnInitDialog() {
     SetWindowText(_T("DCM_CX555 - Task Framework"));
     m_list.SetExtendedStyle(m_list.GetExtendedStyle() | LVS_EX_CHECKBOXES | LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
     m_list.InsertColumn(0, _T("HWND"), LVCFMT_LEFT, 50);
-    m_list.InsertColumn(1, _T("Title"), LVCFMT_LEFT, 135);
-    m_list.InsertColumn(2, _T("Process"), LVCFMT_LEFT, 70);
-    m_list.InsertColumn(3, _T("Status"), LVCFMT_LEFT, 160);
+    m_list.InsertColumn(1, _T("Title"), LVCFMT_LEFT, 75);
+    m_list.InsertColumn(2, _T("Process"), LVCFMT_LEFT, 55);
+    m_list.InsertColumn(3, _T("Status"), LVCFMT_LEFT, 100);
+    m_list.InsertColumn(kRunColumn, _T("任务"), LVCFMT_CENTER, 34);
+    m_list.InsertColumn(kPauseColumn, _T("暂停"), LVCFMT_CENTER, 34);
     InitTaskLists();
     m_debug.LimitText(100000);
     IncreaseDebugFont();
@@ -214,6 +224,7 @@ void CDCMDlg::UpdateRows(const std::vector<HWND>& keepChecked) {
         m_list.SetItemText(row, 2, w->process);
         const CString state = m_taskManager ? m_taskManager->Status(w->hWnd) : CString(_T("stopped"));
         m_list.SetItemText(row, 3, state);
+        UpdateRowButtons(row);
         m_list.SetCheck(row, std::find(keepChecked.begin(), keepChecked.end(), w->hWnd) != keepChecked.end());
     }
     HideHorizontalScrollBar(m_list);
@@ -223,6 +234,25 @@ void CDCMDlg::UpdateStatuses() {
     for (int i = 0; i < m_list.GetItemCount() && i < static_cast<int>(m_windows.size()); ++i) {
         const HWND hwnd = m_windows[i]->hWnd;
         m_list.SetItemText(i, 3, m_taskManager ? m_taskManager->Status(hwnd) : _T("stopped"));
+        UpdateRowButtons(i);
+    }
+}
+
+void CDCMDlg::UpdateRowButtons(int row) {
+    if (row < 0 || row >= static_cast<int>(m_windows.size())) return;
+    const std::vector<HWND> target{ m_windows[row]->hWnd };
+    const bool sequenceRunning = m_taskManager && m_taskManager->IsSequenceRunning(target);
+    const bool paused = m_taskManager && m_taskManager->IsPaused(target.front());
+    const bool running = m_taskManager && m_taskManager->IsRunning(target.front());
+    const LPCTSTR runText = sequenceRunning ? _T("结束") : _T("执行");
+    const LPCTSTR pauseText = paused ? _T("继续") : _T("暂停");
+    // Only touch the cells when the label changes to avoid flicker on the 1s timer.
+    if (m_list.GetItemText(row, kRunColumn) != runText) m_list.SetItemText(row, kRunColumn, runText);
+    if (m_list.GetItemText(row, kPauseColumn) != pauseText) m_list.SetItemText(row, kPauseColumn, pauseText);
+    // Item data caches "runtime running" so custom draw can grey out the pause button.
+    if ((m_list.GetItemData(row) != 0) != running) {
+        m_list.SetItemData(row, running ? 1 : 0);
+        m_list.RedrawItems(row, row);
     }
 }
 
@@ -530,10 +560,14 @@ void CDCMDlg::OnPause() {
 void CDCMDlg::OnTimer(UINT_PTR id) {
     if (id == 1) {
         UpdateStatuses();
+        // A selected window with a running sequence owns the execution list;
+        // the checked-window removal below then only keeps its counter in step.
+        const bool viewingWindow = SyncTaskRunListWithSelection();
         if (m_taskSequenceStarted && m_taskManager) {
             const auto checked = CheckedHandles();
             if (!checked.empty()) {
                 const size_t completed = m_taskManager->CompletedTaskCount(checked);
+                if (viewingWindow) m_taskRowsRemoved = completed;
                 while (m_taskRowsRemoved < completed && m_taskRunList.GetItemCount() > 0) {
                     const CString task = m_taskRunList.GetItemText(0, 0);
                     m_taskRunList.DeleteItem(0);
@@ -554,9 +588,179 @@ void CDCMDlg::OnTimer(UINT_PTR id) {
     CDialogEx::OnTimer(id);
 }
 
-void CDCMDlg::OnListItemChanged(NMHDR*, LRESULT* result) {
+void CDCMDlg::OnListItemChanged(NMHDR* pNMHDR, LRESULT* result) {
     UpdateActionButtons();
+    const auto* change = reinterpret_cast<const NMLISTVIEW*>(pNMHDR);
+    if (change && (change->uChanged & LVIF_STATE) != 0 &&
+        ((change->uNewState ^ change->uOldState) & LVIS_SELECTED) != 0) {
+        SyncTaskRunListWithSelection();
+    }
     if (result) *result = 0;
+}
+
+bool CDCMDlg::SyncTaskRunListWithSelection() {
+    const int row = m_list.GetNextItem(-1, LVNI_SELECTED);
+    if (!m_taskManager || row < 0 || row >= static_cast<int>(m_windows.size())) {
+        m_viewedSequenceHwnd = nullptr;
+        return false;
+    }
+    const HWND hwnd = m_windows[row]->hWnd;
+    if (!m_taskManager->IsSequenceRunning({ hwnd })) {
+        // The window we were mirroring has finished its queue: clear the list
+        // the same way the checked-window sequence does on completion.
+        if (m_viewedSequenceHwnd == hwnd) {
+            m_taskRunList.DeleteAllItems();
+            CString message;
+            message.Format(_T("window 0x%p: task sequence completed, execution list cleared"), hwnd);
+            SetStatus(_T("window task sequence completed; execution list cleared"));
+            AppendDebug(message, LogLevel::Normal);
+        }
+        // An idle window leaves the list alone so it can still be edited and run.
+        m_viewedSequenceHwnd = nullptr;
+        return false;
+    }
+
+    m_viewedSequenceHwnd = hwnd;
+    const auto remaining = m_taskManager->RemainingTaskIds(hwnd);
+    bool same = m_taskRunList.GetItemCount() == static_cast<int>(remaining.size());
+    for (int i = 0; same && i < static_cast<int>(remaining.size()); ++i)
+        same = static_cast<int>(m_taskRunList.GetItemData(i)) == remaining[i];
+    if (same) return true;
+
+    m_taskRunList.SetRedraw(FALSE);
+    m_taskRunList.DeleteAllItems();
+    for (const int taskId : remaining) {
+        // Item data is the task palette row, as in OnTaskListDblClick.
+        const int item = m_taskRunList.InsertItem(m_taskRunList.GetItemCount(), m_taskList.GetItemText(taskId, 0));
+        m_taskRunList.SetItemData(item, static_cast<DWORD_PTR>(taskId));
+    }
+    m_taskRunList.SetRedraw(TRUE);
+    m_taskRunList.Invalidate();
+    return true;
+}
+
+void CDCMDlg::OnWindowListClick(NMHDR* pNMHDR, LRESULT* result) {
+    if (result) *result = 0;
+    const auto* item = reinterpret_cast<const NMITEMACTIVATE*>(pNMHDR);
+    if (!item) return;
+    LVHITTESTINFO hit{};
+    hit.pt = item->ptAction;
+    if (m_list.SubItemHitTest(&hit) < 0 || hit.iItem < 0) return;
+    if (hit.iSubItem == kRunColumn) ToggleWindowSequence(hit.iItem);
+    else if (hit.iSubItem == kPauseColumn) ToggleWindowPause(hit.iItem);
+}
+
+void CDCMDlg::OnWindowListCustomDraw(NMHDR* pNMHDR, LRESULT* result) {
+    auto* draw = reinterpret_cast<NMLVCUSTOMDRAW*>(pNMHDR);
+    *result = CDRF_DODEFAULT;
+    switch (draw->nmcd.dwDrawStage) {
+    case CDDS_PREPAINT:
+        *result = CDRF_NOTIFYITEMDRAW;
+        return;
+    case CDDS_ITEMPREPAINT:
+        *result = CDRF_NOTIFYSUBITEMDRAW;
+        return;
+    case CDDS_ITEMPREPAINT | CDDS_SUBITEM:
+        break;
+    default:
+        return;
+    }
+    if (draw->iSubItem != kRunColumn && draw->iSubItem != kPauseColumn) return;
+
+    const int row = static_cast<int>(draw->nmcd.dwItemSpec);
+    CRect cell;
+    if (!m_list.GetSubItemRect(row, draw->iSubItem, LVIR_BOUNDS, cell)) return;
+    const bool enabled = draw->iSubItem != kPauseColumn || m_list.GetItemData(row) != 0;
+
+    CDC* dc = CDC::FromHandle(draw->nmcd.hdc);
+    dc->FillSolidRect(cell, ::GetSysColor(COLOR_WINDOW));
+    CRect button(cell);
+    button.DeflateRect(2, 1, 2, 1);
+    dc->DrawFrameControl(button, DFC_BUTTON, DFCS_BUTTONPUSH | (enabled ? 0 : DFCS_INACTIVE));
+    const int oldMode = dc->SetBkMode(TRANSPARENT);
+    const COLORREF oldColor = dc->SetTextColor(::GetSysColor(enabled ? COLOR_BTNTEXT : COLOR_GRAYTEXT));
+    const CString text = m_list.GetItemText(row, draw->iSubItem);
+    dc->DrawText(text, button, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    dc->SetTextColor(oldColor);
+    dc->SetBkMode(oldMode);
+    *result = CDRF_SKIPDEFAULT;
+}
+
+void CDCMDlg::ToggleWindowSequence(int row) {
+    if (!m_taskManager || row < 0 || row >= static_cast<int>(m_windows.size())) return;
+    const auto wnd = m_windows[row];
+    const std::vector<HWND> target{ wnd->hWnd };
+    CString message;
+
+    if (m_taskManager->IsSequenceRunning(target)) {
+        m_taskManager->StopSequence(target);
+        // A manual stop keeps the remaining tasks in the list instead of clearing it.
+        if (m_viewedSequenceHwnd == wnd->hWnd) m_viewedSequenceHwnd = nullptr;
+        message.Format(_T("window 0x%p: task sequence ended"), wnd->hWnd);
+        SetStatus(_T("window task sequence ended"));
+        AppendDebug(message, LogLevel::Normal);
+        UpdateStatuses();
+        UpdateActionButtons();
+        return;
+    }
+
+    const auto taskIds = TaskSequenceIds();
+    if (taskIds.empty()) {
+        SetStatus(_T("add tasks to the execution list first"));
+        AppendDebug(_T("window task sequence ignored: execution list is empty"), LogLevel::Warning);
+        return;
+    }
+    if (!m_dmInitDone.load()) {
+        SetStatus(_T("dm registration is still running"));
+        AppendDebug(_T("window task sequence ignored: dm registration is still running"), LogLevel::Warning);
+        return;
+    }
+    if (!m_dmRegistered.load()) {
+        SetStatus(_T("dm registration failed"));
+        AppendDebug(_T("window task sequence ignored: dm registration failed"), LogLevel::Exception);
+        return;
+    }
+
+    // Same flow as OnTaskToggle, but only for this row: start its three
+    // worker threads if needed, then hand it the current execution list.
+    if (!m_taskManager->Start({ wnd })) {
+        message.Format(_T("window 0x%p: runtime failed to start"), wnd->hWnd);
+        SetStatus(_T("window failed to start"));
+        AppendDebug(message, LogLevel::Exception);
+        UpdateStatuses();
+        UpdateActionButtons();
+        return;
+    }
+    m_taskManager->StartSequence(taskIds, target);
+    message.Format(_T("window 0x%p: task sequence started, %u task(s)"), wnd->hWnd,
+                   static_cast<unsigned>(taskIds.size()));
+    SetStatus(_T("window task sequence started"));
+    AppendDebug(message, LogLevel::Normal);
+    UpdateStatuses();
+    SyncTaskRunListWithSelection();
+    UpdateActionButtons();
+}
+
+void CDCMDlg::ToggleWindowPause(int row) {
+    if (!m_taskManager || row < 0 || row >= static_cast<int>(m_windows.size())) return;
+    const HWND hwnd = m_windows[row]->hWnd;
+    const std::vector<HWND> target{ hwnd };
+    CString message;
+    if (!m_taskManager->IsRunning(hwnd)) {
+        message.Format(_T("window 0x%p: pause ignored, window is stopped"), hwnd);
+        SetStatus(_T("window is not running"));
+        AppendDebug(message, LogLevel::Warning);
+        return;
+    }
+
+    const bool paused = m_taskManager->IsPaused(hwnd);
+    if (paused) m_taskManager->Resume(target);
+    else m_taskManager->Suspend(target);
+    message.Format(paused ? _T("window 0x%p: resumed") : _T("window 0x%p: paused"), hwnd);
+    SetStatus(paused ? _T("window resumed") : _T("window paused"));
+    AppendDebug(message, LogLevel::Normal);
+    UpdateStatuses();
+    UpdateActionButtons();
 }
 
 std::vector<int> CDCMDlg::TaskSequenceIds() const {

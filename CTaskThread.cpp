@@ -20,12 +20,12 @@
 
 namespace {
 
-// Updated 32-bit Game.exe instruction: mov ecx, dword ptr ds:[00B46034]
-// (Game.exe base 0x00380000 + RVA 0x007C6034).
-// The value stored there is the ride-list object.  The first ride record is
-// inline at object + 0x805AC; record[0] contains id at +0x00 and the usable
-// / highlighted flag at +0x04.
-constexpr LONGLONG kRideTableOffset = 0x805AC;
+// Verified native loop at Game.exe+0x156065: BAGBP's object contains
+// 640 inline ride records, each 12 bytes, beginning at +0x805BC.
+// Each record has a signed WORD id at +0x00 and a usable flag at +0x04.
+constexpr LONGLONG kRideTableOffset = 0x805BC;
+constexpr DWORD kRideRecordCount = 640;
+constexpr DWORD kRideRecordStride = 12;
 
 // CEGUI WindowManager 的注册表是 std::_Tree。WindowManager 保存树头，
 // 树头 + 0x04 保存根节点；节点字段来自当前 32 位客户端布局。
@@ -117,14 +117,14 @@ constexpr DWORD kSelectionHandleOffset = 0x22BF8;
 // Pet table: seven records of PET_RANG bytes.  The out-state fields live
 // on the character object and are compared with the pet record fields.
 constexpr DWORD kPetRecordSize = 524;          // PET_RANG
-constexpr DWORD kPetTableOffset = 0x6711C;
+constexpr DWORD kPetTableOffset = 0x67120;
 constexpr DWORD kPetSkillArrayOffset = 0x11C;
 constexpr DWORD kPetSkillSlotCount = 13;
 // SkillTemplate_V1: 696=血祭, 697=高级血祭.
 constexpr DWORD kPetXueJiSkillId = 696;
 constexpr DWORD kPetGaoJiXueJiSkillId = 697;
-constexpr DWORD kPetOutStatusOffset = 0x2A04;   // cwcz1
-constexpr DWORD kPetSoulOffset = kPetOutStatusOffset - 388;
+constexpr DWORD kPetOutStatusOffset = 0x2A14;   // cwcz1
+constexpr DWORD kPetSoulOffset = 0x2880;
 
 constexpr DWORD kMinimumUserAddress = 0x10000;
 constexpr DWORD kMaximumStateEntries = 0x10000;
@@ -566,9 +566,9 @@ constexpr DWORD kMissionIdOffset = 0x09;
 constexpr DWORD kPaoShangZijinOffset = 0x0E;
 constexpr int kMissionRecordCount = 20;
 
-// BagJ resolves the player-data slot through BAGBP. The object's +0x61B90
+// BagJ resolves the player-data slot through BAGBP. The object's +0x61B94
 // byte is the raw guild rank (2..9: member, elite, merchant, ... guild master).
-constexpr DWORD kGuildRankOffset = 0x61B90;
+constexpr DWORD kGuildRankOffset = 0x61B94;
 
 struct KjdaEntry {
     std::wstring question;
@@ -1811,11 +1811,12 @@ int CTaskThread::wBenTuXuL2_Fast(float xx, float yy)
     return wBenTuXuL2(xx, yy) == 0 ? 1 : -1;
 }
 
-void CTaskThread::wBenTuXuL3z(float xx, float yy)
+void CTaskThread::wBenTuXuL3z(float xx, float yy, float arrivalDistance)
 {
     if (!m_control || m_control->IsStopping()) return;
     int retry = 0;
-    if (xx == 0.0f || yy == 0.0f) return;
+    if (xx == 0.0f || yy == 0.0f ||
+        !std::isfinite(arrivalDistance) || arrivalDistance <= 0.0f) return;
 
     while (!m_control->IsStopping()) {
         Point2f position{};
@@ -1825,7 +1826,7 @@ void CTaskThread::wBenTuXuL3z(float xx, float yy)
         }
 
         const float remaining = NearbyDistance(position, Point2f{ xx, yy });
-        if (remaining < 1.0f || Read_GENS() == 1) break;
+        if (remaining <= arrivalDistance || Read_GENS() == 1) break;
 
         if (Read_RWZT() != 2) {
             wBenTuXuL2(xx, yy);
@@ -2038,13 +2039,28 @@ int CTaskThread::wKuaTuXL(float xx, float yy, int dtid)
     }, true, PacketAction::Move) ? 1 : -1;
 }
 
-int CTaskThread::wKuaTuXL33(float xx, float yy, int dtid)
+int CTaskThread::wKuaTuXL33(float xx, float yy, int dtid, float arrivalDistance)
 {
+    if (!m_control || m_control->IsStopping() ||
+        !std::isfinite(arrivalDistance) || arrivalDistance <= 0.0f) return -1;
     int commandCount = 0;
     DWORD lastStateTick = GetTickCount();
+    DWORD lastProgressTick = lastStateTick;
     DWORD currentMap = Read_DTID();
     Point2f previousPosition{};
+    const auto arrived = [&]() {
+        if (Read_DTID() != dtid || IsWndGuot()) return false;
+        Point2f position{};
+        if (!ReadNearbyPlayerPosition(position)) return false;
+        const float remaining = NearbyDistance(position, Point2f{xx, yy});
+        if (!std::isfinite(remaining) || remaining > arrivalDistance) return false;
+        LogD(_T("KuaTuXL33: arrived map=%d pos=(%.2f,%.2f) target=(%.2f,%.2f) distance=%.2f state=%d"),
+             dtid, position.x, position.y, xx, yy, remaining, Read_RWZT());
+        return true;
+    };
 
+    // 坐标到位即交回调用方；移动状态刷新滞后不应阻止下马/使用任务物品。
+    if (arrived()) return 0;
     wRideOn(1);
     while (!m_control->IsStopping()) {
         if (IsWndOpen2(MessageBox_Self_Frame) == 1) {//还没有判断名字
@@ -2058,12 +2074,14 @@ int CTaskThread::wKuaTuXL33(float xx, float yy, int dtid)
             while (IsWndGuot() == 1 && !m_control->IsStopping()) SleepEx(4000);
             continue;
         }
+        if (arrived()) return 0;
 
         if (Read_DTID() != currentMap) {
             Point2f position{};
             if (ReadNearbyPlayerPosition(position)) previousPosition = position;
             for (int index = 0; index < 20 && !m_control->IsStopping(); ++index) {
                 SleepEx(500);
+                if (arrived()) return 0;
                 Point2f next{};
                 if (ReadNearbyPlayerPosition(next) &&
                     (next.x != previousPosition.x || next.y != previousPosition.y)) {
@@ -2073,6 +2091,13 @@ int CTaskThread::wKuaTuXL33(float xx, float yy, int dtid)
             currentMap = Read_DTID();
         }
 
+        if (GetTickCount() - lastProgressTick >= 5000) {
+            Point2f position{};
+            const bool valid = ReadNearbyPlayerPosition(position);
+            LogD(_T("KuaTuXL33: waiting map=%d targetMap=%d posValid=%d pos=(%.2f,%.2f) target=(%.2f,%.2f) state=%d"),
+                 Read_DTID(), dtid, valid, position.x, position.y, xx, yy, Read_RWZT());
+            lastProgressTick = GetTickCount();
+        }
         if (Read_RWZT() != 2) {
             if (Read_DTID() == dtid) {
                 Point2f position{};
@@ -2080,7 +2105,7 @@ int CTaskThread::wKuaTuXL33(float xx, float yy, int dtid)
                     SleepEx(500);
                     continue;
                 }
-                if (NearbyDistance(position, Point2f{ xx, yy }) < 2.0f ||
+                if (NearbyDistance(position, Point2f{ xx, yy }) <= arrivalDistance ||
                     Read_GENS() == 1) {
                     break;
                 }
@@ -2113,6 +2138,8 @@ void CTaskThread::wBenTuXuL7(int mos, float xx, float yy, int szq)
 
     Point2f position{};
     if (!ReadNearbyPlayerPosition(position)) return;
+    LogD(_T("XuL7: map=%d pos=(%.2f,%.2f) target=(%.2f,%.2f) mount=%d"),
+         Read_DTID(), position.x, position.y, xx, yy, szq);
     if (szq == 1) wRideOn(1);
     if (NearbyDistance(position, Point2f{ xx, yy }) < 2.0f) return;
 
@@ -2286,14 +2313,15 @@ CString BuildNearbyTitleExpression(DWORD node) {
 
 std::string CStringToNearbyAnsi(const CString& text) {
 #ifdef _UNICODE
+    // 正则和待匹配名称统一为 UTF-8，避免系统 ACP 丢字或把 GBK 尾字节当转义符。
     if (text.IsEmpty()) return {};
     const int sourceLength = text.GetLength();
     const int byteLength = ::WideCharToMultiByte(
-        CP_ACP, 0, text.GetString(), sourceLength, nullptr, 0, nullptr, nullptr);
+        CP_UTF8, 0, text.GetString(), sourceLength, nullptr, 0, nullptr, nullptr);
     if (byteLength <= 0) return {};
 
     std::string result(static_cast<size_t>(byteLength), '\0');
-    ::WideCharToMultiByte(CP_ACP, 0, text.GetString(), sourceLength,
+    ::WideCharToMultiByte(CP_UTF8, 0, text.GetString(), sourceLength,
                           result.data(), byteLength, nullptr, nullptr);
     return result;
 #else
@@ -2312,13 +2340,14 @@ CString NearbyAnsiBufferToCString(DWORD buffer, DWORD offset = 0,
     if (length == 0) return {};
 
 #ifdef _UNICODE
+    // 游戏内存中的名称使用 GBK，与运行辅助的 Windows 系统代码页无关。
     const int targetLength = ::MultiByteToWideChar(
-        CP_ACP, 0, source, static_cast<int>(length), nullptr, 0);
+        936, 0, source, static_cast<int>(length), nullptr, 0);
     if (targetLength <= 0) return {};
 
     CString result;
     wchar_t* destination = result.GetBuffer(targetLength);
-    ::MultiByteToWideChar(CP_ACP, 0, source, static_cast<int>(length),
+    ::MultiByteToWideChar(936, 0, source, static_cast<int>(length),
                           destination, targetLength);
     result.ReleaseBuffer(targetLength);
     return result;
@@ -2446,8 +2475,8 @@ bool CTaskThread::ReadServerTime(std::int64_t& unixSeconds)
     const DWORD game = static_cast<DWORD>(m_dm->GetModuleBaseAddr(targetHwnd, _T("Game.exe")));
     if (game < kMinimumUserAddress) return false;
 
-    // 0.08.3209: synchronized clock global used by DataPool:LuaGetCurrentServerTime().
-    constexpr DWORD kTimeSystemGlobalRva = 0x007CF4BC;
+    // 0.08.3708: synchronized clock global used by DataPool:LuaGetCurrentServerTime().
+    constexpr DWORD kTimeSystemGlobalRva = 0x007E4FE0;
     constexpr DWORD kServerEpochLowOffset = 0x6DDF0;
     constexpr DWORD kServerEpochHighOffset = 0x6DDF4;
     constexpr DWORD kSyncTickOffset = 0x6DDF8;
@@ -2596,6 +2625,8 @@ DWORD CTaskThread::cGetNetIc()
 int CTaskThread::cRead_Identify(DWORD xuh)
 {
     if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd) return 0;
+    // The native bag getter accepts only slots 0..239.
+    if (xuh >= 240) return 0;
 
     const DWORD bagSlot = static_cast<DWORD>(jz[TaskMemoryState::BagJ]);
     if (bagSlot == 0) return 0;
@@ -2625,7 +2656,7 @@ int CTaskThread::cRead_Identify(DWORD xuh)
 
     if (static_cast<BYTE>(Read_Dw(state + 0x5E)) == 0) return 0;
 
-    // 01084360 returns (state->flagsByte & 0x02) >> 1.  The caller inverts
+    // 0.08.3708 Game+0x532550 returns (state->flagsByte & 0x02) >> 1. The caller inverts
     // that result: 1 means unidentified and 0 means identified.
     return (Read_Dw(state + 0x0D) & 0x02) != 0 ? 0 : 1;
 }
@@ -2633,6 +2664,8 @@ int CTaskThread::cRead_Identify(DWORD xuh)
 int CTaskThread::cRead_Bind(DWORD xuh)
 {
     if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd) return 0;
+    // The native bag getter accepts only slots 0..239.
+    if (xuh >= 240) return 0;
 
     const DWORD bagSlot = static_cast<DWORD>(jz[TaskMemoryState::BagJ]);
     if (bagSlot == 0) return 0;
@@ -2649,7 +2682,7 @@ int CTaskThread::cRead_Bind(DWORD xuh)
     const DWORD state = Read_Dw(item + 0x14);
     if (state == 0) return 0;
 
-    // 00ED5940 first tests the low bit of state+0x0D.  This is the raw
+    // 0.08.3708 Game+0x3809C0 first tests the low bit of state+0x0D. This is the raw
     // already-bound result and must be checked before the two item-property
     // branches below.
     if ((Read_Dw(state + 0x0D) & 0x01) != 0) return 1;
@@ -3243,7 +3276,7 @@ int CTaskThread::wDui_Gens(int xuh)
     if (xuh != 0 && xuh != 1) return -1;
     bool completed = false;
     const bool dispatched = DispatchPacketWithInterval(_T("team follow"), [this, xuh, &completed] {
-        const DWORD jine = xuh == 1 ? 0x6F5 : 0x6E9;
+        const DWORD jine = xuh == 1 ? 0x2BB : 0x132;
         const LONGLONG block = jz[TaskMemoryState::Nbsq];
         if (!Dm()->WriteIntAddr(mmhwnd, block + 1330 + 2, 0, jine) ||
             !Dm()->WriteIntAddr(mmhwnd, block + ZHUBC, 0, block + 1330) ||
@@ -3711,7 +3744,7 @@ int CTaskThread::Read_CWSkillID(int xuh, int skillIndex)
     if (!IsPlausibleStatePointer(bagJ)) return 0;
 
     // Pet::GetSkillIDbyIndex uses the same chain:
-    // BagJ -> +0x6711C -> record[xuh] + 0x11C -> skill[index].
+    // BagJ -> +0x67120 -> record[xuh] + 0x11C -> skill[index].
     const DWORD bagManager = Read_Dw(bagJ);
     if (!IsPlausibleStatePointer(bagManager)) return 0;
     const DWORD petTable = Read_Dw(bagManager + kPetTableOffset);
@@ -3761,16 +3794,40 @@ void CTaskThread::tCheckXj()
     int petXuh = static_cast<int>(Mams[CoXuHa]);
     if (petXuh < 0 || petXuh >= kPetCount) petXuh = 0;
 
+    const DWORD bagManager = Read_Dw(static_cast<DWORD>(jz[TaskMemoryState::BagJ]));
+    if (!IsPlausibleStatePointer(bagManager)) return;
+    const DWORD petTable = Read_Dw(bagManager + kPetTableOffset);
+    if (!IsPlausibleStatePointer(petTable)) return;
+    const DWORD role = Read_Dw(static_cast<DWORD>(jz[TaskMemoryState::ROLEB]));
+    if (!IsPlausibleStatePointer(role)) return;
+    const DWORD player = Read_Dw(role + 0x64);
+    if (!IsPlausibleStatePointer(player)) return;
+    const DWORD component = Read_Dw(player + 0x148);
+    if (!IsPlausibleStatePointer(component)) return;
+    const DWORD attributes = Read_Dw(component + 0x10);
+    if (!IsPlausibleStatePointer(attributes)) return;
+    const DWORD soulGuid1 = Read_Dw(attributes + kPetSoulOffset);
+    const DWORD soulGuid2 = Read_Dw(attributes + kPetSoulOffset + 4);
+    const auto canDeployPet = [this, petTable, soulGuid1, soulGuid2](int slot) {
+        const DWORD record = petTable + static_cast<DWORD>(slot) * kPetRecordSize;
+        if (Read_Dw(record) == MAXDWORD) return false;
+        const DWORD guid1 = Read_Dw(record + 8);
+        const DWORD guid2 = Read_Dw(record + 12);
+        // Possessed pets may have XueJi, but cannot be summoned.
+        return (guid1 != 0 || guid2 != 0) &&
+               (guid1 != soulGuid1 || guid2 != soulGuid2);
+    };
+
     // 先用当前配置的宠物，没有血祭再扫描其余宠物（优先高级血祭）
     int bestXuh = -1;
     int bestXueJi = 0;
-    const int current = Read_CWXueJi(petXuh);
+    const int current = canDeployPet(petXuh) ? Read_CWXueJi(petXuh) : 0;
     if (current > 0) {
         bestXuh = petXuh;
         bestXueJi = current;
     } else {
         for (int xuh = 0; xuh < kPetCount; ++xuh) {
-            if (xuh == petXuh) continue;
+            if (xuh == petXuh || !canDeployPet(xuh)) continue;
             const int level = Read_CWXueJi(xuh);
             if (level > bestXueJi) {
                 bestXuh = xuh;
@@ -3786,6 +3843,9 @@ void CTaskThread::tCheckXj()
         Mams[CoXuHa] = static_cast<DWORD>(bestXuh);
         petXuh = bestXuh;
     }
+
+    // 原配置也可能指向附体宠物；没有可替换的血祭宠物时跳过召唤。
+    if (!canDeployPet(petXuh)) return;
 
     // 未出战先召唤（参考 Pet_Xueup 的出战流程）
     if (!Read_CWCZ(petXuh)) {
@@ -3872,8 +3932,12 @@ BagItem CTaskThread::Read_BagN3(CString Nam, int djg, int zl)
             _T("[[[[[%08x]+22C00]+%08x]+2c]+18]"),
             bagJ,
             static_cast<DWORD>(djg * 400 + i * 4));
-        const CString itemName = Dm()->ReadString(mmhwnd, expression, 0, 0);
-        if (!std::regex_match(CStringToNearbyAnsi(itemName), txtRegex)) {
+        // 直接读取名称字节后按 GBK 解码，避免 ReadString 的 ANSI 转换受本机 ACP 影响。
+        const DWORD nameBuffer = static_cast<DWORD>(
+            Dm()->ReadDataToBin(mmhwnd, expression, 256));
+        if (nameBuffer < kMinimumUserAddress) continue;
+        const CString itemName = NearbyAnsiBufferToCString(nameBuffer, 0, 256);
+        if (itemName.IsEmpty() || !std::regex_match(CStringToNearbyAnsi(itemName), txtRegex)) {
             continue;
         }
 
@@ -4035,11 +4099,26 @@ CString CTaskThread::Read_BagCr(int zl)
 
 int CTaskThread::wPet_Chu(int xuh, int cz)
 {
-    if (!m_memory || !m_control || m_control->IsStopping()) return -1;
+    if (!m_memory || !m_control || m_control->IsStopping() ||
+        xuh < 0 || xuh >= 7 || (cz != 0 && cz != 1)) return -1;
     // Match the reference short-circuit: do not send a packet when the pet
     // is already in the requested state.
     if (Read_CWCZ(xuh) && cz == 0) return 0;
     if (!Read_CWCZ(xuh) && cz == 1) return 1;
+
+    // Resolve the requested slot before feeding or summoning. Read_CWCZ only
+    // updates the cached GUID when that pet is already deployed.
+    const DWORD bagManager = Read_Dw(static_cast<DWORD>(jz[TaskMemoryState::BagJ]));
+    if (!IsPlausibleStatePointer(bagManager)) return -1;
+    const DWORD petTable = Read_Dw(bagManager + kPetTableOffset);
+    if (!IsPlausibleStatePointer(petTable)) return -1;
+    const DWORD record = petTable + static_cast<DWORD>(xuh) * kPetRecordSize;
+    if (Read_Dw(record) == MAXDWORD) return -1;
+    const DWORD guid1 = Read_Dw(record + 8);
+    const DWORD guid2 = Read_Dw(record + 12);
+    if (guid1 == 0 && guid2 == 0) return -1;
+    Mams[Cox1] = guid1;
+    Mams[Cox2] = guid2;
 
     // The client refuses the pet action while happiness is below 80. Feed the
     // configured 回旋金球 first; wUseBag2 keeps the common packet interval.
@@ -4062,9 +4141,9 @@ int CTaskThread::wPet_Chu(int xuh, int cz)
 
     CString action;
     action.Format(_T("pet action slot=%d mode=%d"), xuh, cz);
-    const bool sent = DispatchPacketWithInterval(action, [this, cz] {
-        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 750 + 16, 0, Mams[Cox1]);
-        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 750 + 23, 0, Mams[Cox2]);
+    const bool sent = DispatchPacketWithInterval(action, [this, cz, guid1, guid2] {
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 750 + 16, 0, guid1);
+        Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 750 + 23, 0, guid2);
         Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 750 + 30, 0, cz);
         Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0,
                            jz[TaskMemoryState::Nbsq] + 750);
@@ -4993,12 +5072,19 @@ bool CTaskThread::wHaveRide() {
     const DWORD object = static_cast<DWORD>(jz[TaskMemoryState::zqpd]);
     if (object == 0) return false;
 
-    const LONGLONG record0 = static_cast<LONGLONG>(object) + kRideTableOffset;
-    const WORD id = static_cast<WORD>(m_dm->ReadIntAddr(
-        targetHwnd, record0, 2));
-    const DWORD flag = static_cast<DWORD>(m_dm->ReadIntAddr(
-        targetHwnd, record0 + 4, 4));
-    return id > 0 && flag != 0;
+    const LONGLONG table = static_cast<LONGLONG>(object) + kRideTableOffset;
+    for (DWORD index = 0; index < kRideRecordCount; ++index) {
+        const LONGLONG record = table + index * kRideRecordStride;
+        // Read a DWORD and retain the signed WORD, as in mCanAttack's word reads.
+        const SHORT id = static_cast<SHORT>(m_dm->ReadIntAddr(
+            targetHwnd, record, 4));
+        if (id <= 0) continue;
+
+        const DWORD flag = static_cast<DWORD>(m_dm->ReadIntAddr(
+            targetHwnd, record + 4, 4));
+        if (flag != 0) return true;
+    }
+    return false;
 }
 
 void CTaskThread::wRideOn(int sx) {
@@ -5267,19 +5353,46 @@ DWORD CTaskThread::Read_RWZTC2(DWORD erc, std::vector<DWORD> vzt) {
     return 0;
 }
 
+//DWORD CTaskThread::wXunL_Guih(float xx, float yy)
+//{
+//    // 0.08.3612: CWorldManager::vtable[0x40] 返回 [this+0xDC08]。
+//	tsg[TaskMemoryState::tls1].Format(_T("[[[[%08lX]+DC08]+A4]+4]+1C"),
+//        static_cast<DWORD>(jz[TaskMemoryState::CWorldManager]));
+//	DWORD dxldj = Dm()->ReadInt(mmhwnd, tsg[TaskMemoryState::tls1], 0);
+//	if (dxldj == 0) return kReachUnknown;
+//	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 0x43, 0, dxldj + 8);
+//	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 0x4F, 0, dxldj + 12);
+//
+//	Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 10, xx);
+//	Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 0x13, yy);
+//    Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 0x47, xx);
+//    Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 0x53, yy);
+//    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 108, 0, 0);
+//	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTC, 0, jz[TaskMemoryState::Nbsq] + 1510);
+//	while (Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTB, 0, 1) == 0) SleepEx(20);
+//
+//	while (!m_control->IsStopping()) {
+//		SleepEx(20);
+//		if (Dm()->ReadIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTB, 0) == 0) { break; }
+//	}
+//    if (Dm()->ReadIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 108, 0) == 1) return 1;
+//	return 0;
+//}
 DWORD CTaskThread::wXunL_Guih(float xx, float yy)
 {
-	tsg[TaskMemoryState::tls1].Format(_T("[[[[%08x]+D95C]+A4]+4]+1C"), jz[TaskMemoryState::CWorldManager]);
+	// 0.08.3612: CWorldManager::vtable[0x40] 返回 [this+0xDC08]。
+	tsg[TaskMemoryState::tls1].Format(_T("[[[[%08lX]+DC08]+A4]+4]+1C"),
+		static_cast<DWORD>(jz[TaskMemoryState::CWorldManager]));
 	DWORD dxldj = Dm()->ReadInt(mmhwnd, tsg[TaskMemoryState::tls1], 0);
-	if (dxldj == 0) return 0;
-	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 0x43, 0, dxldj + 8);
-	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 0x4F, 0, dxldj + 12);
+	if (dxldj == 0) return kReachUnknown;
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 0x34, 0, dxldj + 8);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 0x40, 0, dxldj + 12);
 
-	Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 10, xx);
-	Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 0x13, yy);
-    Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 0x47, xx);
-    Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 0x53, yy);
-    Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 108, 0, 0);
+	Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 8, xx);
+	Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 0x3, yy);
+	Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 0x38, xx);
+	Dm()->WriteFloatAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 0x44, yy);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 88, 0, 0);
 	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTC, 0, jz[TaskMemoryState::Nbsq] + 1510);
 	while (Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTB, 0, 1) == 0) SleepEx(20);
 
@@ -5287,7 +5400,7 @@ DWORD CTaskThread::wXunL_Guih(float xx, float yy)
 		SleepEx(20);
 		if (Dm()->ReadIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUTB, 0) == 0) { break; }
 	}
-    if (Dm()->ReadIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 108, 0) == 1) return 1;
+	if (Dm()->ReadIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1510 + 88, 0) == 1) return 1;
 	return 0;
 }
 
@@ -5415,6 +5528,24 @@ int CTaskThread::Read_ATID(DWORD gwdz) {
     return static_cast<int>(Read_Dw(object + 0x214));
 }
 
+void CTaskThread::wOpenSadg(int xuh, int longl)
+{
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1740 + 48, 0, xuh);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1740 + 55, 0, longl);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0, jz[TaskMemoryState::Nbsq] + 1740);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB , 0, 1);
+	while (Dm()->ReadIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0) == 1) Sleep(10);
+}
+
+void CTaskThread::wClicSadg(int fbxh, int xuh, int longl) {
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1820 + 0x2C, 0, fbxh);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1820 + 0x33, 0, xuh);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + 1820 + 0x56, 0, longl);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBC, 0, jz[TaskMemoryState::Nbsq] + 1820);
+	Dm()->WriteIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0, 1);
+	while (Dm()->ReadIntAddr(mmhwnd, jz[TaskMemoryState::Nbsq] + ZHUBB, 0) == 1) Sleep(10);
+}
+
 int CTaskThread::Read_DTID() {
     if (!m_dm || !m_ready.load() || !m_wnd || !m_wnd->hWnd) return 0;
 
@@ -5539,7 +5670,7 @@ bool CTaskThread::mCanAttack(DWORD zjdz, DWORD Mid)
         return static_cast<WORD>(m_dm->ReadIntAddr(targetHwnd, address, 4));
     };
 
-    // 00547C30 builds its relation descriptors from this chain:
+    // 0.08.3708 Game+0x0ED560 builds the local player's descriptor from this chain:
     // object + 0x148 -> character component; component + 0x10 -> character data.
     constexpr LONGLONG kCharacterComponentOffset = 0x148;
     constexpr LONGLONG kCharacterDataOffset = 0x10;
@@ -5560,7 +5691,7 @@ bool CTaskThread::mCanAttack(DWORD zjdz, DWORD Mid)
         static_cast<LONGLONG>(targetComponent) + kCharacterDataOffset);
     if (selfData == 0 || targetData == 0) return false;
 
-    // sub_8AFF40 rejects the local relation descriptor when this field is 1.
+    // Game+0x53DFF0 rejects the local relation descriptor when this field is 1.
     if (readDword(static_cast<LONGLONG>(selfData) + kRelationDisabledOffset) == 1) {
         return false;
     }
@@ -5568,20 +5699,21 @@ bool CTaskThread::mCanAttack(DWORD zjdz, DWORD Mid)
     const WORD selfCamp = readWord(static_cast<LONGLONG>(selfData) + kCampOffset);
     const WORD targetCamp = readWord(static_cast<LONGLONG>(targetData) + kCampOffset);
 
-    // When both camp values are present, 008AFEA0 is only this direct test.
+    // Game+0x53DF50 checks equal/neutral camp 1 first, then camp 2, then camp 0.
+    // In particular, 2 versus 0 is hostile in either direction.
     if (selfCamp != 0xFFFF && targetCamp != 0xFFFF) {
-        return selfCamp != targetCamp &&
-               selfCamp != 0 && targetCamp != 0 &&
-               selfCamp != 1 && targetCamp != 1;
+        if (selfCamp == targetCamp || selfCamp == 1 || targetCamp == 1) return false;
+        if (selfCamp == 2 || targetCamp == 2) return true;
+        return selfCamp != 0 && targetCamp != 0;
     }
 
     const WORD selfType = readWord(static_cast<LONGLONG>(selfData) + kRelationTypeOffset);
     const WORD targetType = readWord(static_cast<LONGLONG>(targetData) + kRelationTypeOffset);
     if (selfType > 0x3F || targetType > 0x3F) return false;
 
-    // sub_934F20/sub_934F60 read the current build's 64x64 relation matrix.
-    // selfType=9, targetType=0x1B, matrix=-160000 and self override=0.
-    constexpr LONGLONG kRelationMatrixRva = 0x007D42F0;
+    // 0.08.3708: Game+0x541FB0 loads this matrix; +0x541F50/+0x541F90 read rows/cells.
+    // Verified: type 9 -> boss/star type 28 = -160000; NPC type 10 = 0.
+    constexpr LONGLONG kRelationMatrixRva = 0x007EA070;
     constexpr LONGLONG kRelationRowStride = 0x110;
     constexpr LONGLONG kRelationRowDataOffset = 0x0C;
     constexpr LONG kAttackableThreshold = -160000;
